@@ -2291,6 +2291,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     # Guided regeneration: extract before it reaches the LLM provider
     regeneration_prompt = form_data.pop('regeneration_prompt', None)
 
+    # Check model capabilities for file_upload
+    file_upload_enabled = (model.get('info', {}).get('meta', {}).get('capabilities') or {}).get('file_upload', True)
+
     # Load messages from DB when available — DB preserves structured 'output' items
     # which the frontend strips, causing tool calls to be merged into content.
     chat_id = metadata.get('chat_id')
@@ -2314,25 +2317,26 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
             # Inject image files into content as image_url parts (mirrors frontend logic)
             for message in form_data['messages']:
-                image_files = [
-                    f
-                    for f in message.get('files', [])
-                    if f.get('type') == 'image' or (f.get('content_type') or '').startswith('image/')
-                ]
-                if message.get('role') == 'user' and image_files:
-                    text_content = message.get('content', '')
-                    if isinstance(text_content, str):
-                        message['content'] = [
-                            {'type': 'text', 'text': text_content},
-                            *[
-                                {
-                                    'type': 'image_url',
-                                    'image_url': {'url': f['url']},
-                                }
-                                for f in image_files
-                                if f.get('url')
-                            ],
-                        ]
+                if file_upload_enabled:
+                    image_files = [
+                        f
+                        for f in message.get('files', [])
+                        if f.get('type') == 'image' or (f.get('content_type') or '').startswith('image/')
+                    ]
+                    if message.get('role') == 'user' and image_files:
+                        text_content = message.get('content', '')
+                        if isinstance(text_content, str):
+                            message['content'] = [
+                                {'type': 'text', 'text': text_content},
+                                *[
+                                    {
+                                        'type': 'image_url',
+                                        'image_url': {'url': f['url']},
+                                    }
+                                    for f in image_files
+                                    if f.get('url')
+                                ],
+                            ]
                 # Strip files field — it's been incorporated into content
                 message.pop('files', None)
 
@@ -2407,7 +2411,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         if folder and folder.data:
             if 'system_prompt' in folder.data:
                 form_data = await apply_system_prompt_to_body(folder.data['system_prompt'], form_data, metadata, user)
-            if 'files' in folder.data:
+            if 'files' in folder.data and file_upload_enabled:
                 # Defensive: filter to entries the caller can still read.
                 allowed_files = await get_accessible_folder_files(folder.data['files'], user)
                 if metadata.get('params', {}).get('function_calling') != 'native':
@@ -2421,46 +2425,47 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     metadata['folder_knowledge'] = allowed_files
 
     # Model "Knowledge" handling
-    user_message = get_last_user_message(form_data['messages'])
-    model_knowledge = model.get('info', {}).get('meta', {}).get('knowledge', False)
+    if file_upload_enabled:
+        user_message = get_last_user_message(form_data['messages'])
+        model_knowledge = model.get('info', {}).get('meta', {}).get('knowledge', False)
 
-    if model_knowledge and metadata.get('params', {}).get('function_calling') != 'native':
-        await event_emitter(
-            {
-                'type': 'status',
-                'data': {
-                    'action': 'knowledge_search',
-                    'query': user_message,
-                    'done': False,
-                },
-            }
-        )
+        if model_knowledge and metadata.get('params', {}).get('function_calling') != 'native':
+            await event_emitter(
+                {
+                    'type': 'status',
+                    'data': {
+                        'action': 'knowledge_search',
+                        'query': user_message,
+                        'done': False,
+                    },
+                }
+            )
 
-        knowledge_files = []
-        for item in model_knowledge:
-            if item.get('collection_name'):
-                knowledge_files.append(
-                    {
-                        'id': item.get('collection_name'),
-                        'name': item.get('name'),
-                        'legacy': True,
-                    }
-                )
-            elif item.get('collection_names'):
-                knowledge_files.append(
-                    {
-                        'name': item.get('name'),
-                        'type': 'collection',
-                        'collection_names': item.get('collection_names'),
-                        'legacy': True,
-                    }
-                )
-            else:
-                knowledge_files.append(item)
+            knowledge_files = []
+            for item in model_knowledge:
+                if item.get('collection_name'):
+                    knowledge_files.append(
+                        {
+                            'id': item.get('collection_name'),
+                            'name': item.get('name'),
+                            'legacy': True,
+                        }
+                    )
+                elif item.get('collection_names'):
+                    knowledge_files.append(
+                        {
+                            'name': item.get('name'),
+                            'type': 'collection',
+                            'collection_names': item.get('collection_names'),
+                            'legacy': True,
+                        }
+                    )
+                else:
+                    knowledge_files.append(item)
 
-        files = form_data.get('files', [])
-        files.extend(knowledge_files)
-        form_data['files'] = files
+            files = form_data.get('files', [])
+            files.extend(knowledge_files)
+            form_data['files'] = files
 
     variables = form_data.pop('variables', None)
     payload_tools = form_data.get('tools', None)  # snapshot before filters
@@ -2880,7 +2885,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     # Check if file context extraction is enabled for this model (default True)
     file_context_enabled = (model.get('info', {}).get('meta', {}).get('capabilities') or {}).get('file_context', True)
 
-    if file_context_enabled:
+    if file_upload_enabled and file_context_enabled:
         try:
             form_data, flags = await chat_completion_files_handler(request, form_data, extra_params, user)
             sources.extend(flags.get('sources', []))

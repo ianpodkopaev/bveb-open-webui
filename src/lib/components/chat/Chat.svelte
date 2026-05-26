@@ -2258,16 +2258,23 @@
 			return fileExists;
 		});
 
-		let files = structuredClone(chatFiles);
-		files.push(
-			...(userMessage?.files ?? []).filter(
-				(item) =>
-					['doc', 'text', 'note', 'chat', 'collection', 'folder'].includes(item.type) ||
-					(item.type === 'file' && !(item?.content_type ?? '').startsWith('image/'))
-			)
-		);
-		// Remove duplicates
-		files = files.filter((item, index, array) => array.findIndex((i) => equal(i, item)) === index);
+		let files = [];
+		if (model?.info?.meta?.capabilities?.file_upload ?? true) {
+			files = structuredClone(chatFiles);
+			files.push(
+				...(userMessage?.files ?? []).filter(
+					(item) =>
+						['doc', 'text', 'note', 'chat', 'collection', 'folder'].includes(item.type) ||
+						(item.type === 'file' && !(item?.content_type ?? '').startsWith('image/'))
+				)
+			);
+			// Remove duplicates
+			files = files.filter(
+				(item, index, array) => array.findIndex((i) => equal(i, item)) === index
+			);
+		} else if (chatFiles.length > 0) {
+			toast.warning($i18n.t('Данная модель не поддерживает файлы'));
+		}
 
 		scrollToBottom();
 		eventTarget.dispatchEvent(
@@ -2310,11 +2317,15 @@
 				}))
 			].filter((message) => message);
 
+			const fileUploadEnabled = model?.info?.meta?.capabilities?.file_upload ?? true;
+
 			messages = messages
 				.map((message, idx, arr) => {
-					const imageFiles = (message?.files ?? []).filter(
-						(file) => file.type === 'image' || (file?.content_type ?? '').startsWith('image/')
-					);
+					const imageFiles = fileUploadEnabled
+						? (message?.files ?? []).filter(
+								(file) => file.type === 'image' || (file?.content_type ?? '').startsWith('image/')
+							)
+						: [];
 
 					return {
 						role: message.role,
