@@ -2337,6 +2337,12 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                     if f.get('url')
                                 ],
                             ]
+                else:
+                    content = message.get('content', '')
+                    if isinstance(content, list):
+                        message['content'] = [block for block in content if block.get('type') != 'image_url']
+                        if len(message['content']) == 1 and message['content'][0].get('type') == 'text':
+                            message['content'] = message['content'][0]['text']
                 # Strip files field — it's been incorporated into content
                 message.pop('files', None)
 
@@ -2914,7 +2920,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     if len(sources) > 0:
         events.append({'sources': sources})
 
-    if model_knowledge:
+    if file_upload_enabled and model_knowledge:
         await event_emitter(
             {
                 'type': 'status',

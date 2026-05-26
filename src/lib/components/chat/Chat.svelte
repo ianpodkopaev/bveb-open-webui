@@ -131,6 +131,7 @@
 	let navbarElement;
 
 	let showEventConfirmation = false;
+	let pendingModelRevertId = '';
 	let eventConfirmationTitle = '';
 	let eventConfirmationMessage = '';
 	let eventConfirmationInput = false;
@@ -296,6 +297,43 @@
 
 	const onSelectedModelIdsChange = () => {
 		resetInput();
+
+		const oldIds = oldSelectedModelIds.filter((id) => id);
+		const newIds = selectedModelIds.filter((id) => id);
+
+		if (oldIds.length > 0 && newIds.length > 0) {
+			const oldPrimary = $models.find((m) => m.id === oldIds[0]);
+			const newPrimary = $models.find((m) => m.id === newIds[0]);
+
+			const oldFileUpload = oldPrimary?.info?.meta?.capabilities?.file_upload ?? true;
+			const newFileUpload = newPrimary?.info?.meta?.capabilities?.file_upload ?? true;
+
+			if (oldFileUpload && !newFileUpload) {
+				const hasFilesInHistory = Object.values(history.messages).some(
+					(msg: any) => msg.files && msg.files.length > 0
+				);
+
+				if (hasFilesInHistory) {
+					pendingModelRevertId = oldIds[0];
+					eventConfirmationInput = false;
+					eventConfirmationTitle = $i18n.t('Новый чат?');
+					eventConfirmationMessage = $i18n.t(
+						'Выбранная модель не поддерживает файлы. Текущий чат содержит файлы. Хотите создать новый чат?'
+					);
+					eventCallback = async (confirmed: boolean) => {
+						if (confirmed) {
+							history = { messages: {}, currentId: null };
+							await initChatHandler(history);
+						} else {
+							selectedModels = [pendingModelRevertId];
+							atSelectedModel = undefined;
+						}
+					};
+					showEventConfirmation = true;
+				}
+			}
+		}
+
 		oldSelectedModelIds = structuredClone(selectedModelIds);
 	};
 
@@ -2958,6 +2996,8 @@
 	inputPlaceholder={eventConfirmationInputPlaceholder}
 	inputValue={eventConfirmationInputValue}
 	inputType={eventConfirmationInputType}
+	cancelLabel="Отмена"
+	confirmLabel="Подтвердить"
 	on:confirm={(e) => {
 		if (e.detail) {
 			eventCallback(e.detail);
