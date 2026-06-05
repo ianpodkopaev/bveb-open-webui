@@ -1211,43 +1211,53 @@ async def get_sources_from_items(
                     'metadatas': [[{'url': item.get('url'), 'name': item.get('url')}]],
                 }
         elif item.get('type') == 'file':
-            if item.get('context') == 'full' or request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
-                if item.get('file', {}).get('data', {}).get('content', ''):
-                    # Manual Full Mode Toggle
-                    # Used from chat file modal, we can assume that the file content will be available from item.get("file").get("data", {}).get("content")
-                    query_result = {
-                        'documents': [[item.get('file', {}).get('data', {}).get('content', '')]],
-                        'metadatas': [
-                            [
-                                {
-                                    'file_id': item.get('id'),
-                                    'name': item.get('name'),
-                                    **item.get('file').get('data', {}).get('metadata', {}),
-                                }
-                            ]
-                        ],
+            # Try to get full file content; fall back to RAG if too large
+            file_content = None
+            file_meta = None
+            if item.get('file', {}).get('data', {}).get('content', ''):
+                file_content = item.get('file', {}).get('data', {}).get('content', '')
+                file_meta = {
+                    'file_id': item.get('id'),
+                    'name': item.get('name'),
+                    **item.get('file').get('data', {}).get('metadata', {}),
+                }
+            elif item.get('id'):
+                file_object = await Files.get_file_by_id(item.get('id'))
+                if file_object and (
+                    user.role == 'admin'
+                    or file_object.user_id == user.id
+                    or await has_access_to_file(item.get('id'), 'read', user)
+                ):
+                    file_content = file_object.data.get('content', '')
+                    file_meta = {
+                        'file_id': item.get('id'),
+                        'name': file_object.filename,
+                        'source': file_object.filename,
                     }
-                elif item.get('id'):
-                    file_object = await Files.get_file_by_id(item.get('id'))
-                    if file_object and (
-                        user.role == 'admin'
-                        or file_object.user_id == user.id
-                        or await has_access_to_file(item.get('id'), 'read', user)
-                    ):
-                        query_result = {
-                            'documents': [[file_object.data.get('content', '')]],
-                            'metadatas': [
-                                [
-                                    {
-                                        'file_id': item.get('id'),
-                                        'name': file_object.filename,
-                                        'source': file_object.filename,
-                                    }
-                                ]
-                            ],
-                        }
+
+            if file_content is not None:
+                max_chars = getattr(
+                    request.app.state.config, 'RAG_FULL_CONTEXT_MAX_CHARS', 100000
+                )
+                if (
+                    len(file_content) <= max_chars
+                    or request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL
+                ):
+                    query_result = {
+                        'documents': [[file_content]],
+                        'metadatas': [[file_meta]],
+                    }
+                else:
+                    log.warning(
+                        f'File content ({len(file_content)} chars) exceeds '
+                        f'RAG_FULL_CONTEXT_MAX_CHARS ({max_chars}), falling back to RAG'
+                    )
+                    query_result = None
+                    if item.get('legacy'):
+                        collection_names.append(f'{item["id"]}')
+                    else:
+                        collection_names.append(f'file-{item["id"]}')
             else:
-                # Fallback to collection names
                 if item.get('legacy'):
                     collection_names.append(f'{item["id"]}')
                 else:
@@ -1381,6 +1391,15 @@ def get_model_path(model: str, update_model: bool = False):
 
     if OFFLINE_MODE:
         local_files_only = True
+
+    # Support explicit proxy for HuggingFace downloads via HF_PROXY env var.
+    # httpx (used by huggingface_hub) reads HTTP_PROXY/HTTPS_PROXY env vars automatically.
+    hf_proxy = os.getenv('HF_PROXY')
+    if hf_proxy:
+        os.environ.setdefault('HTTP_PROXY', hf_proxy)
+        os.environ.setdefault('HTTPS_PROXY', hf_proxy)
+        os.environ.setdefault('http_proxy', hf_proxy)
+        os.environ.setdefault('https_proxy', hf_proxy)
 
     snapshot_kwargs = {
         'cache_dir': cache_dir,
