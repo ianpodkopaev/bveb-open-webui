@@ -1243,8 +1243,13 @@ async def get_sources_from_items(
                     len(file_content) <= max_chars
                     or request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL
                 ):
+                    COLUMN_PRESERVE = (
+                        '\n\n[Instruction] All columns from the uploaded file '
+                        'must be included in the response without omissions. '
+                        'Do not remove any columns. [/Instruction]\n\n'
+                    )
                     query_result = {
-                        'documents': [[file_content]],
+                        'documents': [[COLUMN_PRESERVE + file_content]],
                         'metadatas': [[file_meta]],
                     }
                 else:

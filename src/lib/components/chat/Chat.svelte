@@ -156,6 +156,7 @@
 	let imageGenerationEnabled = false;
 	let webSearchEnabled = false;
 	let codeInterpreterEnabled = false;
+	let presentationGenerationEnabled = false;
 
 	let showCommands = false;
 
@@ -246,6 +247,7 @@
 						webSearchEnabled = input.webSearchEnabled;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
+						presentationGenerationEnabled = input.presentationGenerationEnabled;
 					}
 				} catch (e) {}
 			} else {
@@ -344,6 +346,7 @@
 		webSearchEnabled = false;
 		imageGenerationEnabled = false;
 		codeInterpreterEnabled = false;
+		presentationGenerationEnabled = false;
 
 		if (selectedModelIds.filter((id) => id).length > 0) {
 			await setDefaults();
@@ -433,6 +436,10 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.code_interpreter)
 				) {
 					codeInterpreterEnabled = model.info.meta.defaultFeatureIds.includes('code_interpreter');
+				}
+
+				if ($config?.features?.presentation_generation) {
+					presentationGenerationEnabled = model.info.meta.defaultFeatureIds.includes('presentation_generation');
 				}
 			}
 
@@ -850,6 +857,7 @@
 				webSearchEnabled = false;
 				imageGenerationEnabled = false;
 				codeInterpreterEnabled = false;
+				presentationGenerationEnabled = false;
 
 				try {
 					const input = JSON.parse(storageChatInput);
@@ -862,6 +870,7 @@
 						webSearchEnabled = input.webSearchEnabled;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
+						presentationGenerationEnabled = input.presentationGenerationEnabled;
 					}
 				} catch (e) {}
 			}
@@ -2231,6 +2240,10 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.code_interpreter)
 						? codeInterpreterEnabled
 						: false,
+				presentation_generation:
+					$config?.features?.presentation_generation
+						? presentationGenerationEnabled
+						: false,
 				web_search:
 					$config?.features?.enable_web_search &&
 					($user?.role === 'admin' || $user?.permissions?.features?.web_search)
@@ -3156,6 +3169,7 @@
 									bind:selectedFilterIds
 									bind:imageGenerationEnabled
 									bind:codeInterpreterEnabled
+									bind:presentationGenerationEnabled
 									{pendingOAuthTools}
 									bind:webSearchEnabled
 									bind:atSelectedModel
@@ -3237,6 +3251,7 @@
 									bind:selectedFilterIds
 									bind:imageGenerationEnabled
 									bind:codeInterpreterEnabled
+									bind:presentationGenerationEnabled
 									bind:webSearchEnabled
 									bind:atSelectedModel
 									bind:showCommands
@@ -3286,6 +3301,7 @@
 					{showMessage}
 					{eventTarget}
 					{codeInterpreterEnabled}
+					{presentationGenerationEnabled}
 				/>
 			</PaneGroup>
 		</div>

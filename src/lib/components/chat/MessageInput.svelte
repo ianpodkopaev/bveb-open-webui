@@ -136,6 +136,7 @@
 	export let imageGenerationEnabled = false;
 	export let webSearchEnabled = false;
 	export let codeInterpreterEnabled = false;
+	export let presentationGenerationEnabled = false;
 
 	export let pendingOAuthTools = [];
 
@@ -179,7 +180,8 @@
 		selectedFilterIds,
 		imageGenerationEnabled,
 		webSearchEnabled,
-		codeInterpreterEnabled
+		codeInterpreterEnabled,
+		presentationGenerationEnabled
 	});
 
 	const inputVariableHandler = async (text: string): Promise<string> => {
@@ -1684,6 +1686,7 @@
 											bind:webSearchEnabled
 											bind:imageGenerationEnabled
 											bind:codeInterpreterEnabled
+											bind:presentationGenerationEnabled
 											closeOnOutsideClick={integrationsMenuCloseOnOutsideClick}
 											onShowValves={(e) => {
 												const { type, id } = e;

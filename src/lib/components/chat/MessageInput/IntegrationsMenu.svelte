@@ -28,6 +28,7 @@
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Terminal from '$lib/components/icons/Terminal.svelte';
+	import DocumentText from '$lib/components/icons/DocumentText.svelte';
 	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
 	import ChevronLeft from '$lib/components/icons/ChevronLeft.svelte';
 	import LinkSlash from '$lib/components/icons/LinkSlash.svelte';
@@ -49,6 +50,7 @@
 	export let imageGenerationEnabled = false;
 	export let showCodeInterpreterButton = false;
 	export let codeInterpreterEnabled = false;
+	export let presentationGenerationEnabled = false;
 
 	export let onShowValves: Function;
 	export let onClose: Function;
@@ -314,6 +316,35 @@
 							</button>
 						</Tooltip>
 					{/if}
+
+					<Tooltip content={$i18n.t('Generate a presentation')} placement="top-start">
+						<button
+							class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
+							on:click={() => {
+								presentationGenerationEnabled = !presentationGenerationEnabled;
+							}}
+						>
+							<div class="flex-1 truncate">
+								<div class="flex flex-1 gap-2 items-center">
+									<div class="shrink-0">
+										<DocumentText className="size-3.5" strokeWidth="1.75" />
+									</div>
+
+									<div class=" truncate">{$i18n.t('Presentation')}</div>
+								</div>
+							</div>
+
+							<div class=" shrink-0">
+								<Switch
+									state={presentationGenerationEnabled}
+									on:change={async (e) => {
+										const state = e.detail;
+										await tick();
+									}}
+								/>
+							</div>
+						</button>
+					</Tooltip>
 				</div>
 			{:else if tab === 'tools' && tools}
 				<div in:fly={{ x: 20, duration: 150 }}>

@@ -53,6 +53,7 @@
 	export let modelId;
 
 	export let codeInterpreterEnabled = false;
+	export let presentationGenerationEnabled = false;
 
 	export let pane: Pane | null = null;
 

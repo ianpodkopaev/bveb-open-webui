@@ -116,7 +116,8 @@ from open_webui.utils.code_interpreter import execute_code_jupyter
 from open_webui.utils.payload import apply_system_prompt_to_body
 from open_webui.utils.response import normalize_usage
 from open_webui.utils.mcp.client import MCPClient
-
+from open_webui.utils.file_generator import generate_pptx
+from open_webui.models.files import Files, FileForm
 
 from open_webui.config import (
     CACHE_DIR,
@@ -1259,6 +1260,232 @@ async def terminal_event_handler(
         )
 
 
+GENERATE_FILE_RE = re.compile(r'<!--GENERATE_FILE:(.*?)-->', re.DOTALL)
+
+
+def _repair_generate_json(raw: str) -> str:
+    """Attempt to fix common LLM JSON generation mistakes.
+
+    Known issues handled:
+      - ``use_image_placeholders`` / ``image_file_ids`` placed inside
+        the ``slides`` array instead of at the top level.
+      - Extra closing ``]`` / ``}`` before the end of the marker.
+    """
+    if not raw:
+        return raw
+    try:
+        json.loads(raw)
+        return raw
+    except json.JSONDecodeError:
+        pass
+
+    TOP_KEYS = {'"use_image_placeholders"', '"image_file_ids"', '"prototype_file_id"'}
+
+    # 1. Move misplaced meta keys from inside the slides array to top level.
+    #    The LLM sometimes writes: ...},"use_image_placeholders":false]}}
+    #    where the key:val is a bogus element in the slides array.
+    def _move_meta_key(raw, key):
+        for br_pat in (r'(\})', r'(}})'):
+            pat = rf'{br_pat}\s*,\s*{key}\s*:\s*((?:false|true|"[^"]*"))\s*(\]|}})'
+            m = re.search(pat, raw)
+            if m:
+                val = m.group(2)
+                close_br = m.group(3)
+                raw = raw[: m.start() + len(m.group(1))] + close_br + raw[m.end() :]
+                key_clean = key.strip('"')
+                if key_clean not in raw:
+                    depth = 0
+                    outer_close = None
+                    for i, ch in enumerate(raw):
+                        if ch == '{':
+                            depth += 1
+                        elif ch == '}':
+                            depth -= 1
+                            if depth == 0:
+                                outer_close = i
+                                break
+                    if outer_close is not None:
+                        raw = raw[:outer_close] + f',{key}:{val}' + raw[outer_close:]
+                break
+        return raw
+
+    for key in TOP_KEYS:
+        raw = _move_meta_key(raw, key)
+
+    # 2. Remove extra trailing closing brackets beyond the top-level object.
+    depth = 0
+    end_pos = None
+    for i, ch in enumerate(raw):
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                end_pos = i + 1
+    if end_pos and end_pos < len(raw):
+        raw = raw[:end_pos]
+
+    try:
+        json.loads(raw)
+        return raw
+    except json.JSONDecodeError:
+        pass
+
+    return raw
+
+
+async def process_file_generation_markers(content, request, user, metadata):
+    """Replace <!--GENERATE_FILE:JSON--> markers with download links.
+
+    Scans *content* for file-generation markers left by the LLM (no native
+    function calling).  For each marker the file is generated, uploaded to
+    Storage, registered in the Files DB, and the marker is replaced with a
+    Markdown download link.
+
+    Returns (modified_content, list_of_file_dicts_for_frontend).
+    """
+    PPTX_GENERATION_ENABLED = os.environ.get('PPTX_GENERATION_ENABLED', 'true').lower() == 'true'
+    if not PPTX_GENERATION_ENABLED:
+        return content, []
+    matches = list(GENERATE_FILE_RE.finditer(content))
+    if not matches:
+        FALLBACK_GENERATE_RE = re.compile(
+            r'(\{[\s\S]*?"slides"\s*:\s*\[[\s\S]*?\})\s*$',
+            re.DOTALL,
+        )
+        fb = FALLBACK_GENERATE_RE.search(content)
+        if fb:
+            candidate = fb.group(1)
+            try:
+                json.loads(candidate)
+                content = content[: fb.start()] + f'<!--GENERATE_FILE:{candidate}-->' + content[fb.end():]
+                matches = list(GENERATE_FILE_RE.finditer(content))
+            except json.JSONDecodeError:
+                pass
+        if not matches:
+            return content, []
+
+    from open_webui.internal.db import get_async_db_context
+    from open_webui.models.users import Users
+    from open_webui.storage.provider import Storage
+
+    generated_files = []
+
+    for match in reversed(matches):
+        try:
+            raw_json = _repair_generate_json(match.group(1))
+            spec = json.loads(raw_json)
+            filename = spec.get('filename', 'file.pptx')
+            ext = os.path.splitext(filename)[1].lower()
+
+            if ext == '.pptx':
+                slides = spec.get('slides', [])
+                image_file_ids = spec.get('image_file_ids', '')
+                use_image_placeholders = spec.get('use_image_placeholders', True)
+
+                META_SLIDE_KEYS = {'prototype_file_id', 'use_image_placeholders', 'image_file_ids'}
+                cleaned_slides = []
+                for s in slides:
+                    if isinstance(s, dict):
+                        for meta_key in META_SLIDE_KEYS:
+                            if meta_key in s:
+                                val = s.pop(meta_key, '')
+                                if meta_key == 'use_image_placeholders':
+                                    use_image_placeholders = val
+                                elif meta_key == 'image_file_ids' and not image_file_ids:
+                                    image_file_ids = val
+                    if s:
+                        cleaned_slides.append(s)
+                slides = cleaned_slides
+
+                image_paths = {}
+                if image_file_ids:
+                    async with get_async_db_context() as db:
+                        for fid in image_file_ids.split(','):
+                            fid = fid.strip()
+                            if not fid:
+                                continue
+                            file_record = await Files.get_file_by_id(fid, db=db)
+                            if file_record and file_record.path:
+                                local_path = Storage.get_file(file_record.path)
+                                if os.path.isfile(local_path):
+                                    image_paths[fid] = local_path
+
+                file_bytes = await generate_pptx(
+                    slides=slides,
+                    image_paths=image_paths,
+                    use_image_placeholders=use_image_placeholders,
+                )
+            elif ext in ('.md', '.txt', '.csv', '.json'):
+                raw = spec.get('content', '')
+                file_bytes = raw.encode('utf-8')
+            else:
+                raw = spec.get('content', '')
+                file_bytes = raw.encode('utf-8')
+
+            import uuid as uuid_mod
+            import io
+
+            file_id = str(uuid_mod.uuid4())
+            storage_filename = f'{file_id}_{filename}'
+
+            content_type_map = {
+                '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                '.md': 'text/markdown',
+                '.txt': 'text/plain',
+                '.csv': 'text/csv',
+                '.json': 'application/json',
+            }
+            content_type = content_type_map.get(ext, 'text/plain')
+
+            contents_bytes, file_path = Storage.upload_file(
+                io.BytesIO(file_bytes),
+                storage_filename,
+                {
+                    'OpenWebUI-User-Email': getattr(user, 'email', ''),
+                    'OpenWebUI-User-Id': getattr(user, 'id', ''),
+                    'OpenWebUI-File-Id': file_id,
+                },
+            )
+
+            async with get_async_db_context() as db:
+                db_user = await Users.get_user_by_id(user.id) if user and user.id else None
+                await Files.insert_new_file(
+                    user.id if user else '',
+                    FileForm(
+                        id=file_id,
+                        filename=filename,
+                        path=file_path,
+                        data={'content': raw if ext in ('.md', '.txt', '.csv', '.json') else ''},
+                        meta={
+                            'name': filename,
+                            'content_type': content_type,
+                            'size': len(file_bytes),
+                        },
+                    ),
+                    db=db,
+                )
+
+            download_url = f'/api/v1/files/{file_id}/content'
+            link_text = f'\n[{filename}]({download_url})\n'
+
+            generated_files.append({
+                'type': 'file',
+                'url': file_id,
+                'name': filename,
+                'content_type': content_type,
+            })
+
+            content = content[:match.start()] + link_text + content[match.end():]
+
+        except Exception as e:
+            log.exception(f'File generation marker error: {e}')
+            error_msg = f'\n> ⚠️ File generation failed for **{filename}**: {e}\n'
+            content = content[:match.start()] + error_msg + content[match.end():]
+
+    return content, generated_files
+
+
 async def chat_completion_tools_handler(
     request: Request, body: dict, extra_params: dict, user: UserModel, models, tools
 ) -> tuple[dict, dict]:
@@ -2293,6 +2520,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     # Check model capabilities for file_upload
     file_upload_enabled = (model.get('info', {}).get('meta', {}).get('capabilities') or {}).get('file_upload', True)
+    uploaded_image_map = {}
 
     # Load messages from DB when available — DB preserves structured 'output' items
     # which the frontend strips, causing tool calls to be merged into content.
@@ -2337,6 +2565,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                     if f.get('url')
                                 ],
                             ]
+                        for f in image_files:
+                            if f.get('url'):
+                                uploaded_image_map[f['url']] = f.get('filename', '')
                 else:
                     content = message.get('content', '')
                     if isinstance(content, list):
@@ -2559,6 +2790,76 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         form_data['messages'],
                         append=True,
                     )
+
+        if 'presentation_generation' in features and features['presentation_generation']:
+            # Collect attached image file IDs so the LLM can reference them
+            attached_ids = []
+            for msg in form_data.get('messages', []):
+                content = msg.get('content', '')
+                if isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict) and part.get('type') == 'image_url':
+                            url = part.get('image_url', {}).get('url', '')
+                            if url and not url.startswith('data:'):
+                                attached_ids.append(url.strip())
+            img_note = ''
+            if attached_ids:
+                descriptions = []
+                for fid in attached_ids:
+                    fname = uploaded_image_map.get(fid, '')
+                    if fname:
+                        descriptions.append(f'{fid} ({fname})')
+                    else:
+                        descriptions.append(fid)
+                img_note = (
+                    f'\nThe user has already attached image files: {", ".join(descriptions)}. '
+                    'Use them by setting "image_file_ids": "<id1>,<id2>" at the top level of your JSON, '
+                    'and reference individual images with "image_file_id": "<id>" in image_text slides.\n'
+                )
+
+            FILE_GEN_INSTRUCTION = (
+                "You can generate downloadable files (.pptx) for the user. "
+                "CRITICAL — You MUST wrap the JSON in the marker exactly as shown:\n\n"
+                '<!--GENERATE_FILE:{"filename":"filename.pptx","slides":[...]}-->\n\n'
+                "For .pptx presentations:\n"
+                "- Available slide types and when to use them:\n"
+                "  - title: first/opening slide. Has title + subtitle.\n"
+                "  - bullets: main content slide with a title and a list of items.\n"
+                "  - two_column: comparison or paired content. Has left and right text.\n"
+                "  - image_text: one image with a caption.\n"
+                "  - section: divider slide, large text in the middle. One title only.\n"
+                "  - table: ONLY for numerical/structured data (budgets, scores, timelines). header=column names, rows=data.\n"
+                "    NEVER use table for listing slide titles or placeholder text. Use bullets instead.\n"
+                "  - thank_you: final closing slide.\n"
+                "- The user's content determines the slides. Only add slides for their actual content.\n"
+                "- Each slide gets ONE of the types above. Do NOT repeat the same content across slides.\n"
+                "- Use a final thank_you slide (type: \"thank_you\", title: \"СПАСИБО!\").\n"
+                "- Always include \"filename\" in the JSON.\n"
+                f"{img_note}"
+                "CRITICAL INSTRUCTION — NEVER use the prototype's placeholder text (like "
+                "НАЗВАНИЕ, ПРЕЗЕНТАЦИИ, СЛАЙД, ПЕРЕБИВОЧНЫЙ, СПАСИБО) as slide content. "
+                "These are template labels, not real content. Generate unique, meaningful content "
+                "based on the user's request. If you don't have enough information, ask the user.\n\n"
+                "Slide format examples:\n"
+                '{"slides": [\n'
+                '  {"type":"title","title":"Presentation Title","subtitle":"Subtitle"},\n'
+                '  {"type":"bullets","title":"Section Title","items":["Point one","Point two","Point three"]},\n'
+                '  {"type":"two_column","title":"Comparison","left":"Option A text","right":"Option B text"},\n'
+                '  {"type":"image_text","title":"Photo","image_file_id":"<uuid>","image_caption":"Description"},\n'
+                '  {"type":"section","title":"Divider Title"},\n'
+                '  {"type":"table","title":"Metrics","header":["Quarter","Revenue"],"rows":[["Q1","100K"],["Q2","120K"]]},\n'
+                '  {"type":"thank_you","title":"СПАСИБО!"}\n'
+                "]}\n"
+                "NOTE: The JSON must be valid. Do NOT place use_image_placeholders or image_file_ids "
+                "inside the slides array — they must be top-level keys in the outer JSON object.\n"
+                "WARNING: If you output the JSON without the <!--GENERATE_FILE:...--> wrapper, the file will NOT be created!"
+                " You MUST include the marker.\n"
+            )
+            form_data['messages'] = add_or_update_system_message(
+                FILE_GEN_INSTRUCTION,
+                form_data['messages'],
+                append=True,
+            )
 
     tool_ids = form_data.pop('tool_ids', None)
     terminal_id = form_data.pop('terminal_id', None)
@@ -3465,6 +3766,23 @@ async def non_streaming_chat_response_handler(response, ctx):
                 content = response_data['choices'][0]['message']['content']
 
                 if content:
+                    # Process file generation markers (<!--GENERATE_FILE:...-->)
+                    if not metadata['chat_id'].startswith('channel:'):
+                        try:
+                            new_content, gen_files = await process_file_generation_markers(
+                                content, request, user, metadata,
+                            )
+                            if gen_files or new_content != content:
+                                content = new_content
+                                response_data['choices'][0]['message']['content'] = content
+                                if gen_files:
+                                    await event_emitter({
+                                        'type': 'files',
+                                        'data': {'files': gen_files},
+                                    })
+                        except Exception as e:
+                            log.exception(f'File generation error: {e}')
+
                     await event_emitter(
                         {
                             'type': 'chat:completion',
@@ -5043,6 +5361,36 @@ async def streaming_chat_response_handler(response, ctx):
                         except Exception as e:
                             log.debug(e)
                             break
+
+                # Process file generation markers (<!--GENERATE_FILE:...-->)
+                if content and not metadata['chat_id'].startswith('channel:'):
+                    try:
+                        new_content, gen_files = await process_file_generation_markers(
+                            content, request, user, metadata,
+                        )
+                        if gen_files or new_content != content:
+                            content = new_content
+                            for item in output:
+                                if item.get('type') == 'message':
+                                    for part in item.get('content', []):
+                                        if part.get('type') == 'output_text':
+                                            part['text'] = content
+                                            break
+                            if gen_files:
+                                await event_emitter({
+                                    'type': 'files',
+                                    'data': {'files': gen_files},
+                                })
+                    except Exception as e:
+                        log.exception(f'File generation marker processing error: {e}')
+                        await event_emitter({
+                            'type': 'chat:completion',
+                            'data': {
+                                'content': serialize_output(output),
+                                'output': output,
+                                'error': f'File generation failed: {e}',
+                            },
+                        })
 
                 # Mark all in-progress items as completed
                 for item in output:
