@@ -1214,6 +1214,7 @@ async def get_sources_from_items(
             # Try to get full file content; fall back to RAG if too large
             file_content = None
             file_meta = None
+            file_object = None
             if item.get('file', {}).get('data', {}).get('content', ''):
                 file_content = item.get('file', {}).get('data', {}).get('content', '')
                 file_meta = {
@@ -1221,19 +1222,20 @@ async def get_sources_from_items(
                     'name': item.get('name'),
                     **item.get('file').get('data', {}).get('metadata', {}),
                 }
-            elif item.get('id'):
+            if item.get('id'):
                 file_object = await Files.get_file_by_id(item.get('id'))
                 if file_object and (
                     user.role == 'admin'
                     or file_object.user_id == user.id
                     or await has_access_to_file(item.get('id'), 'read', user)
                 ):
-                    file_content = file_object.data.get('content', '')
-                    file_meta = {
-                        'file_id': item.get('id'),
-                        'name': file_object.filename,
-                        'source': file_object.filename,
-                    }
+                    if not file_content:
+                        file_content = file_object.data.get('content', '')
+                        file_meta = {
+                            'file_id': item.get('id'),
+                            'name': file_object.filename,
+                            'source': file_object.filename,
+                        }
 
             if file_content is not None:
                 max_chars = getattr(
@@ -1253,20 +1255,36 @@ async def get_sources_from_items(
                         'metadatas': [[file_meta]],
                     }
                 else:
-                    log.warning(
-                        f'File content ({len(file_content)} chars) exceeds '
-                        f'RAG_FULL_CONTEXT_MAX_CHARS ({max_chars}), falling back to RAG'
-                    )
                     query_result = None
+                    if file_object and file_object.data.get('rows'):
+                        query_result = _excel_bm25_search(
+                            file_object.data['rows'],
+                            queries,
+                            file_meta,
+                            request.app.state.config,
+                        )
+                    if query_result is None:
+                        log.warning(
+                            f'File content ({len(file_content)} chars) exceeds '
+                            f'RAG_FULL_CONTEXT_MAX_CHARS ({max_chars}), falling back to RAG'
+                        )
+                        if item.get('legacy'):
+                            collection_names.append(f'{item["id"]}')
+                        else:
+                            collection_names.append(f'file-{item["id"]}')
+            else:
+                if file_object and file_object.data.get('rows'):
+                    query_result = _excel_bm25_search(
+                        file_object.data['rows'],
+                        queries,
+                        file_meta,
+                        request.app.state.config,
+                    )
+                if query_result is None:
                     if item.get('legacy'):
                         collection_names.append(f'{item["id"]}')
                     else:
                         collection_names.append(f'file-{item["id"]}')
-            else:
-                if item.get('legacy'):
-                    collection_names.append(f'{item["id"]}')
-                else:
-                    collection_names.append(f'file-{item["id"]}')
 
         elif item.get('type') == 'collection':
             # Manual Full Mode Toggle for Collection
@@ -1386,6 +1404,24 @@ async def get_sources_from_items(
         except Exception as e:
             log.exception(e)
     return sources
+
+
+def _excel_bm25_search(rows, queries, file_meta, config):
+    k = getattr(config, 'RAG_TOP_K_RERANKER', 20)
+    query = ' '.join(queries) if queries else ''
+    if not query.strip():
+        return None
+    try:
+        retriever = BM25Retriever.from_texts(rows, k=k)
+        docs = retriever.invoke(query)
+        if docs:
+            return {
+                'documents': [[doc.page_content for doc in docs]],
+                'metadatas': [[{**file_meta} for doc in docs]],
+            }
+    except Exception as e:
+        log.exception(f'Excel BM25 search failed: {e}')
+    return None
 
 
 def get_model_path(model: str, update_model: bool = False):

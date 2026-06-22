@@ -1671,9 +1671,13 @@ async def process_file(
                 text_content, docs = await load_file_content(request, file, user)
 
             log.debug(f'text_content: {text_content}')
+            data = {'content': text_content}
+            if file.filename.lower().endswith(('.xls', '.xlsx')):
+                data['rows'] = [doc.page_content for doc in docs]
+                log.info(f'stored {len(docs)} rows for Excel BM25 search')
             await Files.update_file_data_by_id(
                 file.id,
-                {'content': text_content},
+                data,
                 db=db,
             )
             hash = calculate_sha256_string(text_content)
