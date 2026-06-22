@@ -2895,11 +2895,11 @@ BYPASS_EMBEDDING_AND_RETRIEVAL = PersistentConfig(
 )
 
 
-RAG_TOP_K = PersistentConfig('RAG_TOP_K', 'rag.top_k', int(os.environ.get('RAG_TOP_K', '50')))
+RAG_TOP_K = PersistentConfig('RAG_TOP_K', 'rag.top_k', int(os.environ.get('RAG_TOP_K', '300')))
 RAG_TOP_K_RERANKER = PersistentConfig(
     'RAG_TOP_K_RERANKER',
     'rag.top_k_reranker',
-    int(os.environ.get('RAG_TOP_K_RERANKER', '10')),
+    int(os.environ.get('RAG_TOP_K_RERANKER', '300')),
 )
 RAG_RELEVANCE_THRESHOLD = PersistentConfig(
     'RAG_RELEVANCE_THRESHOLD',
