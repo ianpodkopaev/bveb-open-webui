@@ -2895,11 +2895,11 @@ BYPASS_EMBEDDING_AND_RETRIEVAL = PersistentConfig(
 )
 
 
-RAG_TOP_K = PersistentConfig('RAG_TOP_K', 'rag.top_k', int(os.environ.get('RAG_TOP_K', '3')))
+RAG_TOP_K = PersistentConfig('RAG_TOP_K', 'rag.top_k', int(os.environ.get('RAG_TOP_K', '50')))
 RAG_TOP_K_RERANKER = PersistentConfig(
     'RAG_TOP_K_RERANKER',
     'rag.top_k_reranker',
-    int(os.environ.get('RAG_TOP_K_RERANKER', '3')),
+    int(os.environ.get('RAG_TOP_K_RERANKER', '10')),
 )
 RAG_RELEVANCE_THRESHOLD = PersistentConfig(
     'RAG_RELEVANCE_THRESHOLD',
@@ -2909,13 +2909,13 @@ RAG_RELEVANCE_THRESHOLD = PersistentConfig(
 RAG_HYBRID_BM25_WEIGHT = PersistentConfig(
     'RAG_HYBRID_BM25_WEIGHT',
     'rag.hybrid_bm25_weight',
-    float(os.environ.get('RAG_HYBRID_BM25_WEIGHT', '0.5')),
+    float(os.environ.get('RAG_HYBRID_BM25_WEIGHT', '0.6')),
 )
 
 ENABLE_RAG_HYBRID_SEARCH = PersistentConfig(
     'ENABLE_RAG_HYBRID_SEARCH',
     'rag.enable_hybrid_search',
-    os.environ.get('ENABLE_RAG_HYBRID_SEARCH', '').lower() == 'true',
+    os.environ.get('ENABLE_RAG_HYBRID_SEARCH', 'true').lower() == 'true',
 )
 
 ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS = PersistentConfig(
