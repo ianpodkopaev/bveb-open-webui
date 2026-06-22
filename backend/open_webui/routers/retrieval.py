@@ -1543,6 +1543,45 @@ class ProcessFileForm(BaseModel):
     collection_name: Optional[str] = None
 
 
+async def load_file_content(request: Request, file, user):
+    """Load and extract text content from a file object (already fetched from DB).
+    Returns (text_content, docs_list)."""
+    file_path = file.path
+    if file_path:
+        file_path = await asyncio.to_thread(Storage.get_file, file_path)
+        loader = build_loader_from_config(request)
+        loader.user = user
+        docs = await loader.aload(file.filename, file.meta.get('content_type'), file_path)
+        docs = [
+            Document(
+                page_content=doc.page_content,
+                metadata={
+                    **filter_metadata(doc.metadata),
+                    'name': file.filename,
+                    'created_by': file.user_id,
+                    'file_id': file.id,
+                    'source': file.filename,
+                },
+            )
+            for doc in docs
+        ]
+    else:
+        docs = [
+            Document(
+                page_content=file.data.get('content', ''),
+                metadata={
+                    **file.meta,
+                    'name': file.filename,
+                    'created_by': file.user_id,
+                    'file_id': file.id,
+                    'source': file.filename,
+                },
+            )
+        ]
+    text_content = ' '.join([doc.page_content for doc in docs])
+    return text_content, docs
+
+
 @router.post('/process/file')
 async def process_file(
     request: Request,
@@ -1629,40 +1668,7 @@ async def process_file(
             else:
                 # Process the file and save the content
                 # Usage: /files/
-                file_path = file.path
-                if file_path:
-                    file_path = await asyncio.to_thread(Storage.get_file, file_path)
-                    loader = build_loader_from_config(request)
-                    loader.user = user
-                    docs = await loader.aload(file.filename, file.meta.get('content_type'), file_path)
-
-                    docs = [
-                        Document(
-                            page_content=doc.page_content,
-                            metadata={
-                                **filter_metadata(doc.metadata),
-                                'name': file.filename,
-                                'created_by': file.user_id,
-                                'file_id': file.id,
-                                'source': file.filename,
-                            },
-                        )
-                        for doc in docs
-                    ]
-                else:
-                    docs = [
-                        Document(
-                            page_content=file.data.get('content', ''),
-                            metadata={
-                                **file.meta,
-                                'name': file.filename,
-                                'created_by': file.user_id,
-                                'file_id': file.id,
-                                'source': file.filename,
-                            },
-                        )
-                    ]
-                text_content = ' '.join([doc.page_content for doc in docs])
+                text_content, docs = await load_file_content(request, file, user)
 
             log.debug(f'text_content: {text_content}')
             await Files.update_file_data_by_id(
@@ -1671,6 +1677,13 @@ async def process_file(
                 db=db,
             )
             hash = calculate_sha256_string(text_content)
+
+            max_chars = getattr(request.app.state.config, 'RAG_FILE_MAX_CHARS', None)
+            if max_chars is not None and len(text_content) > max_chars:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=ERROR_MESSAGES.FILE_TOO_LARGE(f'{max_chars} characters'),
+                )
 
             if request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
                 await Files.update_file_data_by_id(file.id, {'status': 'completed'}, db=db)

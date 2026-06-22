@@ -34,6 +34,7 @@
 
 	let enableFullContent = false;
 	let loading = false;
+	let shake = false;
 
 	let isPDF = false;
 	let isAudio = false;
@@ -363,12 +364,20 @@
 									{:else}
 										{$i18n.t('Using Focused Retrieval')}
 									{/if}
-									<Switch
-										bind:state={enableFullContent}
-										on:change={(e) => {
-											item.context = e.detail ? 'full' : undefined;
-										}}
-									/>
+									<div class:shake>
+											<Switch
+												bind:state={enableFullContent}
+												on:change={(e) => {
+													if (item?.content_too_large) {
+														enableFullContent = false;
+														shake = true;
+														setTimeout(() => (shake = false), 500);
+													} else {
+														item.context = e.detail ? 'full' : undefined;
+													}
+												}}
+											/>
+										</div>
 								</div>
 							</Tooltip>
 						</div>
@@ -699,5 +708,17 @@
 
 	:global(.dark .excel-table-container table tr:hover) {
 		background-color: rgba(51, 51, 51, 0.5);
+	}
+
+	.shake {
+		animation: shake 0.4s ease-in-out;
+	}
+
+	@keyframes shake {
+		0%, 100% { transform: translateX(0); }
+		20% { transform: translateX(-3px); }
+		40% { transform: translateX(3px); }
+		60% { transform: translateX(-2px); }
+		80% { transform: translateX(2px); }
 	}
 </style>

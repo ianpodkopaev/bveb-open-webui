@@ -2316,5 +2316,9 @@
 	"Your usage stats have been successfully synced.": "",
 	"YouTube": "",
 	"Youtube Language": "",
-	"Youtube Proxy URL": ""
+	"Youtube Proxy URL": "",
+	"File is large — RAG mode will be used. If you'd like full context, upload a smaller file.": "",
+	"Some selected models do not support file upload. Files will use RAG mode.": "",
+	"Selected model(s) do not support file upload.": "",
+	"Full": ""
 }

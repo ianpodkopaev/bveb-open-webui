@@ -42,7 +42,7 @@ from open_webui.models.groups import Groups
 from open_webui.models.access_grants import AccessGrants
 
 
-from open_webui.routers.retrieval import ProcessFileForm, process_file
+from open_webui.routers.retrieval import ProcessFileForm, process_file, load_file_content
 from open_webui.routers.audio import transcribe
 
 from open_webui.storage.provider import Storage
@@ -287,6 +287,43 @@ async def upload_file_handler(
                 await Channels.add_file_to_channel_by_id(channel.id, file_item.id, user.id, db=db)
 
         if process:
+            content_too_large_for_full_context = False
+
+            if db is not None:
+                try:
+                    file_record = await Files.get_file_by_id(file_item.id, db=db)
+                    if file_record:
+                        text_content, _ = await load_file_content(request, file_record, user)
+
+                        max_chars = getattr(
+                            request.app.state.config, 'RAG_FILE_MAX_CHARS', None
+                        )
+                        if max_chars is not None and len(text_content) > max_chars:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=ERROR_MESSAGES.FILE_TOO_LARGE(
+                                    f'{max_chars} characters'
+                                ),
+                            )
+
+                        full_context_max = getattr(
+                            request.app.state.config,
+                            'RAG_FULL_CONTEXT_MAX_CHARS',
+                            100000,
+                        )
+                        if len(text_content) > full_context_max:
+                            content_too_large_for_full_context = True
+
+                        await Files.update_file_data_by_id(
+                            file_item.id,
+                            {'content': text_content},
+                            db=db,
+                        )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    log.warning(f'Could not pre-check content size for {file_item.id}: {e}')
+
             if background_tasks and process_in_background:
                 background_tasks.add_task(
                     process_uploaded_file,
@@ -297,7 +334,11 @@ async def upload_file_handler(
                     file_metadata,
                     user,
                 )
-                return {'status': True, **file_item.model_dump()}
+                return {
+                    'status': True,
+                    **file_item.model_dump(),
+                    'content_too_large_for_full_context': content_too_large_for_full_context,
+                }
             else:
                 await process_uploaded_file(
                     request,
@@ -308,7 +349,11 @@ async def upload_file_handler(
                     user,
                     db=db,
                 )
-                return {'status': True, **file_item.model_dump()}
+                return {
+                    'status': True,
+                    **file_item.model_dump(),
+                    'content_too_large_for_full_context': content_too_large_for_full_context,
+                }
         else:
             if file_item:
                 return file_item

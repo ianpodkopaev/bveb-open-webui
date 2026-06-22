@@ -2322,5 +2322,9 @@
 	"Your usage stats have been successfully synced.": "Ваша статистика использования успешно синхронизирована.",
 	"YouTube": "YouTube",
 	"Youtube Language": "Язык YouTube",
-	"Youtube Proxy URL": "URL прокси для YouTube"
+	"Youtube Proxy URL": "URL прокси для YouTube",
+	"File is large — RAG mode will be used. If you'd like full context, upload a smaller file.": "Файл большой — будет использован RAG режим. Если нужен полный контекст, загрузите файл меньшего размера.",
+	"Some selected models do not support file upload. Files will use RAG mode.": "Некоторые выбранные модели не поддерживают загрузку файлов. Файлы будут обработаны через RAG.",
+	"Selected model(s) do not support file upload.": "Выбранные модели не поддерживают загрузку файлов.",
+	"Full": "Полный"
 }

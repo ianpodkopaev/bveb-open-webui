@@ -111,7 +111,8 @@
 
 	export let autoScroll = false;
 	export let generating = false;
-	export let uploadPending = false;
+	let uploadPending = false;
+	$: uploadPending = files.some((f) => f.status === 'uploading');
 
 	export let atSelectedModel: Model | undefined = undefined;
 	export let selectedModels: [''];
@@ -532,6 +533,20 @@
 		$config?.features?.enable_code_interpreter &&
 		($_user.role === 'admin' || $_user?.permissions?.features?.code_interpreter);
 
+	let prevModelCapabilityOk = true;
+	$: {
+		const modelCount = atSelectedModel?.id ? 1 : selectedModels.length;
+		const allCapable = fileUploadCapableModels.length === modelCount;
+		if (files.length > 0 && !allCapable && prevModelCapabilityOk) {
+			toast.warning(
+				$i18n.t(
+					'Some selected models do not support file upload. Files will use RAG mode.'
+				)
+			);
+		}
+		prevModelCapabilityOk = allCapable;
+	}
+
 	// Disable code interpreter when terminal is active (mutually exclusive)
 	$: if ($selectedTerminalId && codeInterpreterEnabled) {
 		codeInterpreterEnabled = false;
@@ -647,6 +662,16 @@
 					if (uploadedFile.error) {
 						console.warn('File upload warning:', uploadedFile.error);
 						toast.warning(uploadedFile.error);
+					}
+
+					if (uploadedFile.content_too_large_for_full_context) {
+						toast.error(
+							$i18n.t(
+								'File is large — RAG mode will be used. If you\'d like full context, upload a smaller file.'
+							)
+						);
+						fileItem.content_too_large = true;
+						fileItem.context = undefined;
 					}
 
 					fileItem.status = 'uploaded';
@@ -1248,7 +1273,16 @@
 					<form
 						class="w-full flex flex-col gap-1.5 {recording ? 'hidden' : ''}"
 						on:submit|preventDefault={() => {
-							// check if selectedModels support image input
+							if (
+								files.length > 0 &&
+								fileUploadCapableModels.length !==
+									(atSelectedModel?.id ? 1 : selectedModels.length)
+							) {
+								toast.error(
+									$i18n.t('Selected model(s) do not support file upload.')
+								);
+								return;
+							}
 							dispatch('submit', prompt);
 						}}
 					>

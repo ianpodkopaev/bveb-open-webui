@@ -9,6 +9,7 @@
 	import GarbageBin from '../icons/GarbageBin.svelte';
 	import Spinner from './Spinner.svelte';
 	import Tooltip from './Tooltip.svelte';
+	import Switch from './Switch.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 
 	const i18n = getContext('i18n');
@@ -172,6 +173,26 @@
 						<div class="text-gray-500 text-xs capitalize shrink-0">{type}</div>
 					{/if}
 				</div>
+				{#if edit && !loading && item}
+					<div class="flex items-center gap-1 mt-0.5">
+						{#if item?.content_too_large}
+							<span class="text-[10px] text-gray-400">RAG</span>
+						{:else}
+							<span class="text-[10px] {item?.context === 'full' ? 'text-blue-500' : 'text-gray-400'}">
+								{item?.context === 'full' ? $i18n.t('Full') : 'RAG'}
+							</span>
+							<div on:click|stopPropagation>
+								<Switch
+									state={item?.context === 'full'}
+									on:change={(e) => {
+										item.context = e.detail ? 'full' : undefined;
+										item = item;
+									}}
+								/>
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</Tooltip>
 	{/if}
