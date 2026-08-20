@@ -1,5 +1,4 @@
 <script lang="ts">
-	import DOMPurify from 'dompurify';
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { getBackendConfig, getVersionUpdates, getWebhookUrl, updateWebhookUrl } from '$lib/apis';
@@ -38,6 +37,23 @@
 	let adminConfig = null;
 	let webhookUrl = '';
 	let groups = [];
+
+	let subdivisionsText = '';
+
+	const importSubdivisionsFromFile = (files) => {
+		if (!files || files.length === 0) return;
+		const file = files[0];
+		const reader = new FileReader();
+		reader.onload = (e) => {
+			const text = e.target.result;
+			subdivisionsText = text
+				.split(/\r?\n/)
+				.map((s) => s.trim())
+				.filter(Boolean)
+				.join('\n');
+		};
+		reader.readAsText(file, 'utf-8');
+	};
 
 	let banners: Banner[] = [];
 
@@ -90,6 +106,10 @@
 
 	const updateHandler = async () => {
 		webhookUrl = await updateWebhookUrl(localStorage.token, webhookUrl);
+		adminConfig.USER_SUBDIVISIONS = subdivisionsText
+			.split('\n')
+			.map((s) => s.trim())
+			.filter(Boolean);
 		const res = await updateAdminConfig(localStorage.token, adminConfig);
 		await updateLdapConfig(localStorage.token, ENABLE_LDAP);
 		await updateLdapServerHandler();
@@ -113,6 +133,7 @@
 		await Promise.all([
 			(async () => {
 				adminConfig = await getAdminConfig(localStorage.token);
+				subdivisionsText = (adminConfig?.USER_SUBDIVISIONS ?? []).join('\n');
 			})(),
 
 			(async () => {
@@ -199,51 +220,6 @@
 						</div>
 					</div>
 
-					<div class="mb-2.5">
-						<div class="flex w-full justify-between items-center">
-							<div class="text-xs pr-2">
-								<div class="">
-									{$i18n.t('Help')}
-								</div>
-								<div class=" text-xs text-gray-500">
-									{$i18n.t('Discover how to use БелВЭБ Ai and seek support from the community.')}
-								</div>
-							</div>
-
-							<a
-								class="flex-shrink-0 text-xs font-medium underline"
-								href="https://docs.openwebui.com/"
-								target="_blank"
-							>
-								{$i18n.t('Documentation')}
-							</a>
-						</div>
-
-						<div class="mt-1">
-							<div class="flex space-x-1">
-								<a href="https://discord.gg/5rJgQTnV4s" target="_blank">
-									<img
-										alt="Discord"
-										src="https://img.shields.io/badge/Discord-Open_WebUI-blue?logo=discord&logoColor=white"
-									/>
-								</a>
-
-								<a href="https://twitter.com/OpenWebUI" target="_blank">
-									<img
-										alt="X (formerly Twitter) Follow"
-										src="https://img.shields.io/twitter/follow/OpenWebUI"
-									/>
-								</a>
-
-								<a href="https://github.com/open-webui/open-webui" target="_blank">
-									<img
-										alt="Github Repo"
-										src="https://img.shields.io/github/stars/open-webui/open-webui?style=social&label=Star us on Github"
-									/>
-								</a>
-							</div>
-						</div>
-					</div>
 
 					<div class="mb-2.5">
 						<div class="flex w-full justify-between items-center">
@@ -252,43 +228,9 @@
 									{$i18n.t('License')}
 								</div>
 
-								{#if $config?.license_metadata}
-									<a
-										href="https://docs.openwebui.com/enterprise"
-										target="_blank"
-										class="text-gray-500 mt-0.5"
-									>
-										<span class=" capitalize text-black dark:text-white"
-											>{$config?.license_metadata?.type}
-											license</span
-										>
-										registered to
-										<span class=" capitalize text-black dark:text-white"
-											>{$config?.license_metadata?.organization_name}</span
-										>
-										for
-										<span class=" font-medium text-black dark:text-white"
-											>{$config?.license_metadata?.seats ?? 'Unlimited'} users.</span
-										>
-									</a>
-									{#if $config?.license_metadata?.html}
-										<div class="mt-0.5">
-											{@html DOMPurify.sanitize($config?.license_metadata?.html)}
-										</div>
-									{/if}
-								{:else}
-									<a
-										class=" text-xs hover:underline"
-										href="https://docs.openwebui.com/enterprise"
-										target="_blank"
-									>
-										<span class="text-gray-500">
-											{$i18n.t(
-												'Upgrade to a licensed plan for enhanced capabilities, including custom theming and branding, and dedicated support.'
-											)}
-										</span>
-									</a>
-								{/if}
+								<div class=" text-xs text-gray-500">
+									{$i18n.t('No license key found.')}
+								</div>
 							</div>
 
 							<!-- <button
@@ -419,15 +361,7 @@
 									bind:value={adminConfig.API_KEYS_ALLOWED_ENDPOINTS}
 								/>
 
-								<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-									<a
-										href="https://docs.openwebui.com/reference/api-endpoints"
-										target="_blank"
-										class=" text-gray-300 font-medium underline"
-									>
-										{$i18n.t('To learn more about available endpoints, visit our documentation.')}
-									</a>
-								</div>
+							
 							</div>
 						{/if}
 					{/if}
@@ -460,14 +394,7 @@
 								>
 									<div>
 										<span class=" font-medium">{$i18n.t('Warning')}:</span>
-										<span
-											><a
-												href="https://docs.openwebui.com/reference/env-configuration#jwt_expires_in"
-												target="_blank"
-												class=" underline"
-												>{$i18n.t('No expiration can pose security risks.')}
-											</a></span
-										>
+										<span>{$i18n.t('No expiration can pose security risks.')}</span>
 									</div>
 								</div>
 							</div>
@@ -686,6 +613,42 @@
 								</div>
 							{/if}
 						</div>
+					</div>
+				</div>
+
+				<div class="mb-3">
+					<div class=" mt-0.5 mb-2.5 text-base font-medium">{$i18n.t('Subdivisions')}</div>
+
+					<hr class=" border-gray-100/30 dark:border-gray-850/30 my-2" />
+
+					<div class="mb-2.5">
+						<div class="self-center text-xs font-medium mb-2">
+							{$i18n.t('List of subdivisions (one per line)')}
+						</div>
+						<Textarea
+							placeholder={$i18n.t('Enter one subdivision per line')}
+							bind:value={subdivisionsText}
+						/>
+					</div>
+
+					<div class="mb-2.5 flex w-full items-center justify-between pr-2">
+						<div class="self-center text-xs font-medium">{$i18n.t('Load from .txt file')}</div>
+
+						<input
+							id="subdivisions-file-input"
+							hidden
+							type="file"
+							accept=".txt"
+							on:change={(e) => importSubdivisionsFromFile(e.currentTarget.files)}
+						/>
+
+						<button
+							class="text-xs px-3 py-1.5 bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-lg font-medium"
+							type="button"
+							on:click={() => document.getElementById('subdivisions-file-input')?.click()}
+						>
+							{$i18n.t('Load from .txt file')}
+						</button>
 					</div>
 				</div>
 

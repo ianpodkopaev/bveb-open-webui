@@ -222,6 +222,14 @@
 								/>
 							</div>
 						</div>
+
+						<div class="flex flex-col w-full mt-2">
+							<div class=" mb-1 text-xs font-medium">{$i18n.t('Subdivision')}</div>
+
+							<div class="flex-1 text-sm text-gray-500 dark:text-gray-300">
+								{$user?.subdivision ?? $i18n.t('Not assigned')}
+							</div>
+						</div>
 					</div>
 				</div>
 			</div>

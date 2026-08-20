@@ -221,6 +221,7 @@ async def get_session_user(
         'bio': user.bio,
         'gender': user.gender,
         'date_of_birth': user.date_of_birth,
+        'subdivision': user.subdivision,
         'status_emoji': user.status_emoji,
         'status_message': user.status_message,
         'status_expires_at': user.status_expires_at,
@@ -929,6 +930,8 @@ async def add_user(
             form_data.name,
             form_data.profile_image_url,
             form_data.role,
+            oauth=None,
+            subdivision=form_data.subdivision,
             db=db,
         )
 
@@ -1009,6 +1012,7 @@ async def get_admin_config(request: Request, user=Depends(get_admin_user)):
         'API_KEYS_ALLOWED_ENDPOINTS': request.app.state.config.API_KEYS_ALLOWED_ENDPOINTS,
         'DEFAULT_USER_ROLE': request.app.state.config.DEFAULT_USER_ROLE,
         'DEFAULT_GROUP_ID': request.app.state.config.DEFAULT_GROUP_ID,
+        'USER_SUBDIVISIONS': request.app.state.config.USER_SUBDIVISIONS,
         'JWT_EXPIRES_IN': request.app.state.config.JWT_EXPIRES_IN,
         'ENABLE_COMMUNITY_SHARING': request.app.state.config.ENABLE_COMMUNITY_SHARING,
         'ENABLE_MESSAGE_RATING': request.app.state.config.ENABLE_MESSAGE_RATING,
@@ -1039,6 +1043,7 @@ class AdminConfig(BaseModel):
     API_KEYS_ALLOWED_ENDPOINTS: str
     DEFAULT_USER_ROLE: str
     DEFAULT_GROUP_ID: str
+    USER_SUBDIVISIONS: list[str] = []
     JWT_EXPIRES_IN: str
     ENABLE_COMMUNITY_SHARING: bool
     ENABLE_MESSAGE_RATING: bool
@@ -1090,6 +1095,8 @@ async def update_admin_config(request: Request, form_data: AdminConfig, user=Dep
 
     request.app.state.config.DEFAULT_GROUP_ID = form_data.DEFAULT_GROUP_ID
 
+    request.app.state.config.USER_SUBDIVISIONS = form_data.USER_SUBDIVISIONS
+
     pattern = r'^(-1|0|(-?\d+(\.\d+)?)(ms|s|m|h|d|w))$'
 
     # Check if the input string matches the pattern
@@ -1117,6 +1124,7 @@ async def update_admin_config(request: Request, form_data: AdminConfig, user=Dep
         'API_KEYS_ALLOWED_ENDPOINTS': request.app.state.config.API_KEYS_ALLOWED_ENDPOINTS,
         'DEFAULT_USER_ROLE': request.app.state.config.DEFAULT_USER_ROLE,
         'DEFAULT_GROUP_ID': request.app.state.config.DEFAULT_GROUP_ID,
+        'USER_SUBDIVISIONS': request.app.state.config.USER_SUBDIVISIONS,
         'JWT_EXPIRES_IN': request.app.state.config.JWT_EXPIRES_IN,
         'ENABLE_COMMUNITY_SHARING': request.app.state.config.ENABLE_COMMUNITY_SHARING,
         'ENABLE_MESSAGE_RATING': request.app.state.config.ENABLE_MESSAGE_RATING,

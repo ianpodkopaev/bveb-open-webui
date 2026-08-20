@@ -85,6 +85,7 @@ from open_webui.routers import (
     pipelines,
     tasks,
     auths,
+    bug_reports,
     channels,
     chats,
     notes,
@@ -412,6 +413,7 @@ from open_webui.config import (
     ENABLE_EVALUATION_ARENA_MODELS,
     BYPASS_ADMIN_ACCESS_CONTROL,
     USER_PERMISSIONS,
+    USER_SUBDIVISIONS,
     DEFAULT_USER_ROLE,
     DEFAULT_GROUP_ID,
     PENDING_USER_OVERLAY_CONTENT,
@@ -902,6 +904,8 @@ app.state.config.DEFAULT_MODEL_PARAMS = DEFAULT_MODEL_PARAMS
 app.state.config.DEFAULT_PROMPT_SUGGESTIONS = DEFAULT_PROMPT_SUGGESTIONS
 app.state.config.DEFAULT_USER_ROLE = DEFAULT_USER_ROLE
 app.state.config.DEFAULT_GROUP_ID = DEFAULT_GROUP_ID
+
+app.state.config.USER_SUBDIVISIONS = USER_SUBDIVISIONS
 
 app.state.config.PENDING_USER_OVERLAY_CONTENT = PENDING_USER_OVERLAY_CONTENT
 app.state.config.PENDING_USER_OVERLAY_TITLE = PENDING_USER_OVERLAY_TITLE
@@ -1433,6 +1437,7 @@ app.include_router(retrieval.router, prefix='/api/v1/retrieval', tags=['retrieva
 
 app.include_router(configs.router, prefix='/api/v1/configs', tags=['configs'])
 
+app.include_router(bug_reports.router, prefix='/api/v1', tags=['bug_reports'])
 app.include_router(auths.router, prefix='/api/v1/auths', tags=['auths'])
 app.include_router(users.router, prefix='/api/v1/users', tags=['users'])
 
@@ -1765,9 +1770,9 @@ async def chat_completion(
             form_data.pop('id', None)
 
         user_message = form_data.pop('user_message', None) or form_data.pop('parent_message', None)
+        chat_id = form_data.pop('chat_id', None)
         metadata = {
             'user_id': user.id,
-            'chat_id': form_data.pop('chat_id', None),
             'user_message': user_message,
             'user_message_id': user_message.get('id') if user_message else None,
             'assistant_message_id': form_data.pop('assistant_message_id', None),
@@ -1794,6 +1799,9 @@ async def chat_completion(
                 ),
             },
         }
+
+        if chat_id is not None:
+            metadata['chat_id'] = chat_id
 
         if is_new_chat:
             metadata['chat_id'] = str(uuid4())

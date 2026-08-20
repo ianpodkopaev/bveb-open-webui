@@ -2,7 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { createEventDispatcher } from 'svelte';
 	import { onMount, getContext } from 'svelte';
-	import { addUser } from '$lib/apis/auths';
+	import { addUser, getAdminConfig } from '$lib/apis/auths';
 
 	import { WEBUI_BASE_URL } from '$lib/constants';
 
@@ -25,7 +25,15 @@
 		name: '',
 		email: '',
 		password: '',
-		role: 'user'
+		role: 'user',
+		subdivision: ''
+	};
+
+	let subdivisions = [];
+
+	const loadSubdivisions = async () => {
+		const config = await getAdminConfig(localStorage.token).catch(() => null);
+		subdivisions = config?.USER_SUBDIVISIONS ?? [];
 	};
 
 	$: if (show) {
@@ -33,8 +41,10 @@
 			name: '',
 			email: '',
 			password: '',
-			role: 'user'
+			role: 'user',
+			subdivision: ''
 		};
+		loadSubdivisions();
 	}
 
 	const submitHandler = async () => {
@@ -52,7 +62,8 @@
 				_user.email,
 				_user.password,
 				_user.role,
-				generateInitialsImage(_user.name)
+				generateInitialsImage(_user.name),
+				_user.subdivision || null
 			).catch((error) => {
 				toast.error(`${error}`);
 			});
@@ -80,7 +91,7 @@
 
 						if (idx > 0) {
 							if (
-								columns.length === 4 &&
+								(columns.length === 4 || columns.length === 5) &&
 								['admin', 'user', 'pending'].includes(columns[3].toLowerCase())
 							) {
 								const res = await addUser(
@@ -89,7 +100,8 @@
 									columns[1],
 									columns[2],
 									columns[3].toLowerCase(),
-									generateInitialsImage(columns[0])
+									generateInitialsImage(columns[0]),
+									columns[4] || null
 								).catch((error) => {
 									toast.error(`Row ${idx + 1}: ${error}`);
 									return null;
@@ -195,6 +207,23 @@
 							</div>
 
 							<div class="flex flex-col w-full mt-1">
+								<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Subdivision')}</div>
+
+								<div class="flex-1">
+									<select
+										class="w-full capitalize rounded-lg text-sm bg-transparent dark:disabled:text-gray-500 outline-hidden"
+										bind:value={_user.subdivision}
+										aria-label={$i18n.t('Subdivision')}
+									>
+										<option value="">{$i18n.t('Select a subdivision')}</option>
+										{#each subdivisions as subdivision}
+											<option value={subdivision}>{subdivision}</option>
+										{/each}
+									</select>
+								</div>
+							</div>
+
+							<div class="flex flex-col w-full mt-1">
 								<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Name')}</div>
 
 								<div class="flex-1">
@@ -270,7 +299,7 @@
 
 								<div class=" text-xs text-gray-500">
 									ⓘ {$i18n.t(
-										'Ensure your CSV file includes 4 columns in this order: Name, Email, Password, Role.'
+										'Ensure your CSV file includes 5 columns in this order: Name, Email, Password, Role, Subdivision.'
 									)}
 									<a
 										class="underline dark:text-gray-200"

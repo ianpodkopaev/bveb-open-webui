@@ -591,6 +591,18 @@
 		}
 	};
 
+	const tableToTSV = (table) => {
+		const rows = [];
+		table.querySelectorAll('tr').forEach((tr) => {
+			const cells = [];
+			tr.querySelectorAll('th, td').forEach((cell) => {
+				cells.push((cell.textContent ?? '').trim());
+			});
+			if (cells.length > 0) rows.push(cells.join('\t'));
+		});
+		return rows.join('\n');
+	};
+
 	const contentCopyHandler = (e) => {
 		if (contentContainerElement) {
 			e.preventDefault();
@@ -608,14 +620,31 @@
 				table.style.tableLayout = 'auto';
 			});
 
-			tempDiv.querySelectorAll('th').forEach((th) => {
-				th.style.whiteSpace = 'nowrap';
-				th.style.padding = '4px 8px';
+			tempDiv.querySelectorAll('th, td').forEach((cell) => {
+				cell.style.border = '1px solid #ccc';
+				cell.style.padding = '4px 8px';
+				if (cell.tagName === 'TH') {
+					cell.style.whiteSpace = 'nowrap';
+					cell.style.background = '#f6f8fa';
+				}
 			});
+
+			// Plain text: convert tables to tab-separated values (TSV) so they
+			// paste into Excel as real tables instead of markdown/plain text.
+			let plainText = selection.toString();
+			if (tempDiv.querySelector('table')) {
+				const textClone = tempDiv.cloneNode(true);
+				textClone.querySelectorAll('table').forEach((table) => {
+					const div = document.createElement('div');
+					div.textContent = tableToTSV(table);
+					table.replaceWith(div);
+				});
+				plainText = textClone.textContent;
+			}
 
 			// Put cleaned HTML + plain text into clipboard
 			e.clipboardData.setData('text/html', tempDiv.innerHTML);
-			e.clipboardData.setData('text/plain', selection.toString());
+			e.clipboardData.setData('text/plain', plainText);
 		}
 	};
 

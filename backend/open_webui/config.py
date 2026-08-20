@@ -1357,6 +1357,14 @@ DEFAULT_GROUP_ID = PersistentConfig(
     os.environ.get('DEFAULT_GROUP_ID', ''),
 )
 
+USER_SUBDIVISIONS = PersistentConfig(
+    'USER_SUBDIVISIONS',
+    'users.subdivisions',
+    json.loads(os.environ.get('USER_SUBDIVISIONS', '[]'))
+    if os.environ.get('USER_SUBDIVISIONS')
+    else [],
+)
+
 PENDING_USER_OVERLAY_TITLE = PersistentConfig(
     'PENDING_USER_OVERLAY_TITLE',
     'ui.pending_user_overlay_title',

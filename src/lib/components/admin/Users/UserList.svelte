@@ -29,7 +29,6 @@
 	import Plus from '$lib/components/icons/Plus.svelte';
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
-	import About from '$lib/components/chat/Settings/About.svelte';
 	import Banner from '$lib/components/common/Banner.svelte';
 	import Markdown from '$lib/components/chat/Messages/Markdown.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -305,6 +304,13 @@
 
 					<th
 						scope="col"
+						class="px-2.5 py-2"
+					>
+						<div class="flex gap-1.5 items-center">{$i18n.t('Subdivision')}</div>
+					</th>
+
+					<th
+						scope="col"
 						class="px-2.5 py-2 cursor-pointer select-none"
 						on:click={() => setSortKey('last_active_at')}
 					>
@@ -399,6 +405,8 @@
 							</div>
 						</td>
 						<td class=" px-3 py-1"> {user.email} </td>
+
+						<td class=" px-3 py-1"> {user?.subdivision ?? ''} </td>
 
 						<td class=" px-3 py-1">
 							{dayjs(user.last_active_at * 1000).fromNow()}
@@ -511,7 +519,6 @@
 > 
 > Your support helps us stay independent and continue building great tools for everyone. 💛
 > 
-> - 👉 **[Click here to learn more about enterprise licensing](https://docs.openwebui.com/enterprise)**
 > - 👉 *[Click here to sponsor the project on GitHub](https://github.com/sponsors/tjbck)*
 `}
 			/>

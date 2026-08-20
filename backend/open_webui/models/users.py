@@ -55,6 +55,7 @@ class User(Base):
     gender = Column(Text, nullable=True)
     date_of_birth = Column(Date, nullable=True)
     timezone = Column(String, nullable=True)
+    subdivision = Column(String, nullable=True)
 
     presence_state = Column(String, nullable=True)
     status_emoji = Column(String, nullable=True)
@@ -88,6 +89,7 @@ class UserModel(BaseModel):
     gender: Optional[str] = None
     date_of_birth: Optional[datetime.date] = None
     timezone: Optional[str] = None
+    subdivision: Optional[str] = None
 
     presence_state: Optional[str] = None
     status_emoji: Optional[str] = None
@@ -156,6 +158,7 @@ class UpdateProfileForm(BaseModel):
     bio: Optional[str] = None
     gender: Optional[str] = None
     date_of_birth: Optional[datetime.date] = None
+    subdivision: Optional[str] = None
 
     @field_validator('profile_image_url')
     @classmethod
@@ -244,6 +247,7 @@ class UserUpdateForm(BaseModel):
     email: Optional[str] = None
     profile_image_url: Optional[str] = None
     password: Optional[str] = None
+    subdivision: Optional[str] = None
 
     @field_validator('profile_image_url', mode='before')
     @classmethod
@@ -263,6 +267,7 @@ class UsersTable:
         role: str = 'pending',
         username: Optional[str] = None,
         oauth: Optional[dict] = None,
+        subdivision: Optional[str] = None,
         db: Optional[AsyncSession] = None,
     ) -> Optional[UserModel]:
         async with get_async_db_context(db) as db:
@@ -278,6 +283,7 @@ class UsersTable:
                     'updated_at': int(time.time()),
                     'username': username,
                     'oauth': oauth,
+                    'subdivision': subdivision,
                 }
             )
             result = User(**user.model_dump())

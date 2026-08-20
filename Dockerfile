@@ -1,4 +1,9 @@
 # syntax=docker/dockerfile:1
+# Proxy support for building behind a corporate proxy
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
 # Initialize device type args
 # use build args in the docker build command with --build-arg="BUILDARG=true"
 ARG USE_CUDA=false
@@ -27,6 +32,15 @@ ARG GID=0
 ARG BUILDPLATFORM=linux/amd64
 FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS build
 ARG BUILD_HASH
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ENV HTTP_PROXY=$HTTP_PROXY \
+    HTTPS_PROXY=$HTTPS_PROXY \
+    NO_PROXY=$NO_PROXY \
+    http_proxy=$HTTP_PROXY \
+    https_proxy=$HTTPS_PROXY \
+    no_proxy=$NO_PROXY
 
 # Set Node.js options (heap limit Allocation failed - JavaScript heap out of memory)
 # ENV NODE_OPTIONS="--max-old-space-size=4096"
@@ -49,6 +63,16 @@ RUN npm run build
 FROM python:3.11-slim-bookworm AS base
 
 # Use args
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ENV HTTP_PROXY=$HTTP_PROXY \
+    HTTPS_PROXY=$HTTPS_PROXY \
+    NO_PROXY=$NO_PROXY \
+    http_proxy=$HTTP_PROXY \
+    https_proxy=$HTTPS_PROXY \
+    no_proxy=$NO_PROXY
+
 ARG USE_CUDA
 ARG USE_OLLAMA
 ARG USE_CUDA_VER

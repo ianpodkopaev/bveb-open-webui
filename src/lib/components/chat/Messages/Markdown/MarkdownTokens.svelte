@@ -7,7 +7,7 @@
 	const { saveAs } = fileSaver;
 
 	import { marked, type Token } from 'marked';
-	import { copyToClipboard, unescapeHtml } from '$lib/utils';
+	import { unescapeHtml } from '$lib/utils';
 
 	import { WEBUI_BASE_URL } from '$lib/constants';
 	import { settings } from '$lib/stores';
@@ -136,6 +136,35 @@
 		// Use FileSaver.js's saveAs function to save the generated CSV file.
 		saveAs(blob, `table-${id}-${tokenIdx}.csv`);
 	};
+
+	const copyTableHandler = (token) => {
+		const headers = token.header.map((h) => decode(h.text));
+		const rows = token.rows.map((row) =>
+			row.map((cell) => decode(cell.tokens.map((t) => t.text).join('')))
+		);
+
+		// TSV for pasting into Excel (columns separated by tabs)
+		const tsv = [headers, ...rows].map((r) => r.join('\t')).join('\n');
+
+		// HTML table with inline borders for pasting into Word/Excel
+		const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		const cell = (tag, v) =>
+			`<${tag} style="border:1px solid #ccc; padding:4px 8px;">${esc(v)}</${tag}>`;
+		const thead = `<tr>${headers.map((c) => cell('th', c)).join('')}</tr>`;
+		const tbody = rows.map((row) => `<tr>${row.map((c) => cell('td', c)).join('')}</tr>`).join('');
+		const html =
+			`<table style="border-collapse:collapse;">` +
+			`<thead style="background:#f6f8fa;">${thead}</thead><tbody>${tbody}</tbody></table>`;
+
+		const listener = (e) => {
+			e.clipboardData.setData('text/html', html);
+			e.clipboardData.setData('text/plain', tsv);
+			e.preventDefault();
+		};
+		document.addEventListener('copy', listener);
+		document.execCommand('copy');
+		document.removeEventListener('copy', listener);
+	};
 </script>
 
 <!-- {JSON.stringify(tokens)} -->
@@ -245,7 +274,7 @@
 						class="p-1 rounded-lg bg-transparent transition"
 						on:click={(e) => {
 							e.stopPropagation();
-							copyToClipboard(token.raw.trim(), null, $settings?.copyFormatted ?? false);
+							copyTableHandler(token);
 						}}
 					>
 						<Clipboard className=" size-3.5" strokeWidth="1.5" />

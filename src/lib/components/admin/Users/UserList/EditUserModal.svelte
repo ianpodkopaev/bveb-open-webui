@@ -7,6 +7,7 @@
 	import { goto } from '$app/navigation';
 
 	import { updateUserById, getUserGroupsById } from '$lib/apis/users';
+	import { getAdminConfig } from '$lib/apis/auths';
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
@@ -28,9 +29,10 @@
 
 	const init = () => {
 		if (selectedUser) {
-			_user = selectedUser;
+			_user = { ...selectedUser, subdivision: selectedUser?.subdivision ?? '' };
 			_user.password = '';
 			loadUserGroups();
+			loadSubdivisions();
 		}
 	};
 
@@ -39,10 +41,18 @@
 		role: 'pending',
 		name: '',
 		email: '',
-		password: ''
+		password: '',
+		subdivision: ''
 	};
 
+	let subdivisions = [];
+
 	let userGroups: any[] | null = null;
+
+	const loadSubdivisions = async () => {
+		const config = await getAdminConfig(localStorage.token).catch(() => null);
+		subdivisions = config?.USER_SUBDIVISIONS ?? [];
+	};
 
 	const submitHandler = async () => {
 		const res = await updateUserById(localStorage.token, selectedUser.id, _user).catch((error) => {
@@ -148,6 +158,23 @@
 												<option value="admin">{$i18n.t('Admin')}</option>
 												<option value="user">{$i18n.t('User')}</option>
 												<option value="pending">{$i18n.t('Pending')}</option>
+											</select>
+										</div>
+									</div>
+
+									<div class="flex flex-col w-full">
+										<div class=" mb-1 text-xs text-gray-500">{$i18n.t('Subdivision')}</div>
+
+										<div class="flex-1">
+											<select
+												class="w-full text-sm bg-transparent disabled:text-gray-500 dark:disabled:text-gray-500 outline-hidden"
+												bind:value={_user.subdivision}
+												aria-label={$i18n.t('Subdivision')}
+											>
+												<option value="">{$i18n.t('Select a subdivision')}</option>
+												{#each subdivisions as subdivision}
+													<option value={subdivision}>{subdivision}</option>
+												{/each}
 											</select>
 										</div>
 									</div>

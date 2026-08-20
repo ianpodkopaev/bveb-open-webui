@@ -1,0 +1,24 @@
+services:
+  open-webui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: "http://172.16.10.29:8080"
+        HTTPS_PROXY: "http://172.16.10.29:8080"
+    image: bveb-open-webui-belveb-ai:latest
+    container_name: belveb-ai
+    volumes:
+      - open-webui:/app/backend/data
+    ports:
+      - "${OPEN_WEBUI_PORT-3000}:8080"
+    environment:
+      - 'OLLAMA_BASE_URL='
+      - 'WEBUI_NAME=БелВЭБ Ai'
+      - 'WEBUI_SECRET_KEY='
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+
+volumes:
+  open-webui: {}
