@@ -357,6 +357,86 @@ export const addFileToKnowledgeById = async (token: string, id: string, fileId: 
 	return res;
 };
 
+export const addNoteToKnowledgeById = async (token: string, id: string, noteId: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/knowledge/${id}/note/add`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			authorization: `Bearer ${token}`
+		},
+		body: JSON.stringify({
+			note_id: noteId
+		})
+	})
+		.then(async (res) => {
+			if (res.status === 409) {
+				const data = await res.json();
+				return { duplicate: true, ...(typeof data?.detail === 'object' ? data.detail : {}) };
+			}
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.then((json) => {
+			return json;
+		})
+		.catch((err) => {
+			error = err.detail;
+
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const updateNoteInKnowledgeById = async (
+	token: string,
+	id: string,
+	noteId: string,
+	fileId: string
+) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/knowledge/${id}/note/update`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			authorization: `Bearer ${token}`
+		},
+		body: JSON.stringify({
+			note_id: noteId,
+			file_id: fileId
+		})
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.then((json) => {
+			return json;
+		})
+		.catch((err) => {
+			error = err.detail;
+
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
 export const updateFileFromKnowledgeById = async (token: string, id: string, fileId: string) => {
 	let error = null;
 

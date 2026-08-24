@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 import logging
 import io
 import zipfile
+import uuid
 from urllib.parse import quote
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +19,8 @@ from open_webui.models.knowledge import (
     KnowledgeResponse,
     KnowledgeUserResponse,
 )
-from open_webui.models.files import Files, FileModel, FileMetadataResponse
+from open_webui.models.files import Files, FileForm, FileModel, FileMetadataResponse
+from open_webui.models.notes import Notes
 from open_webui.retrieval.vector.async_client import ASYNC_VECTOR_DB_CLIENT
 from open_webui.routers.retrieval import (
     process_file,
@@ -62,10 +64,13 @@ async def embed_knowledge_base_metadata(
     knowledge_base_id: str,
     name: str,
     description: str,
+    file_names: list[str] | None = None,
 ) -> bool:
     """Generate and store embedding for knowledge base."""
     try:
         content = f'{name}\n\n{description}' if description else name
+        if file_names:
+            content += f'\n\nФайлы: {", ".join(file_names)}'
         embedding = await request.app.state.EMBEDDING_FUNCTION(content)
         await ASYNC_VECTOR_DB_CLIENT.upsert(
             collection_name=KNOWLEDGE_BASES_COLLECTION,
@@ -97,6 +102,18 @@ async def remove_knowledge_base_metadata_embedding(knowledge_base_id: str) -> bo
     except Exception as e:
         log.debug(f'Failed to remove embedding for {knowledge_base_id}: {e}')
         return False
+
+
+async def reembed_knowledge_base(request: Request, knowledge_base_id: str) -> bool:
+    """Re-embed a knowledge base with current file names."""
+    knowledge = await Knowledges.get_knowledge_by_id(knowledge_base_id)
+    if not knowledge:
+        return False
+    files = await Knowledges.get_files_by_id(knowledge_base_id)
+    file_names = [f.filename for f in files] if files else []
+    return await embed_knowledge_base_metadata(
+        request, knowledge_base_id, knowledge.name, knowledge.description, file_names
+    )
 
 
 class KnowledgeAccessResponse(KnowledgeUserResponse):
@@ -277,6 +294,7 @@ async def create_new_knowledge(
             knowledge.id,
             knowledge.name,
             knowledge.description,
+            file_names=[],
         )
         return knowledge
     else:
@@ -322,7 +340,10 @@ async def reindex_knowledge_files(
                 try:
                     await process_file(
                         request,
-                        ProcessFileForm(file_id=file.id, collection_name=knowledge_base.id),
+                        ProcessFileForm(
+                            file_id=file.id,
+                            collection_name=knowledge_base.id,
+                        ),
                         user=user,
                         db=db,
                     )
@@ -474,12 +495,15 @@ async def update_knowledge_by_id(
 
     knowledge = await Knowledges.update_knowledge_by_id(id=id, form_data=form_data)
     if knowledge:
-        # Re-embed knowledge base for semantic search
+        # Re-embed knowledge base for semantic search with file names
+        files = await Knowledges.get_files_by_id(knowledge.id)
+        file_names = [f.filename for f in files] if files else []
         await embed_knowledge_base_metadata(
             request,
             knowledge.id,
             knowledge.name,
             knowledge.description,
+            file_names,
         )
         return KnowledgeFilesResponse(
             **knowledge.model_dump(),
@@ -676,6 +700,9 @@ async def add_file_to_knowledge_by_id(
 
         # Add file to knowledge base
         await Knowledges.add_file_to_knowledge_by_id(knowledge_id=id, file_id=form_data.file_id, user_id=user.id, db=db)
+
+        # Re-embed KB metadata with updated file names
+        await reembed_knowledge_base(request, id)
     except Exception as e:
         log.debug(e)
         raise HTTPException(
@@ -693,6 +720,231 @@ async def add_file_to_knowledge_by_id(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
+
+
+class KnowledgeNoteIdForm(BaseModel):
+    note_id: str
+
+
+@router.post('/{id}/note/add', response_model=Optional[KnowledgeFilesResponse])
+async def add_note_to_knowledge_by_id(
+    request: Request,
+    id: str,
+    form_data: KnowledgeNoteIdForm,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    knowledge = await Knowledges.get_knowledge_by_id(id=id, db=db)
+    if not knowledge:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+
+    if (
+        knowledge.user_id != user.id
+        and not await AccessGrants.has_access(
+            user_id=user.id,
+            resource_type='knowledge',
+            resource_id=knowledge.id,
+            permission='write',
+            db=db,
+        )
+        and user.role != 'admin'
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
+
+    note = await Notes.get_note_by_id(form_data.note_id)
+    if not note:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+
+    if note.user_id != user.id and user.role != 'admin':
+        if not await AccessGrants.has_access(
+            user_id=user.id,
+            resource_type='note',
+            resource_id=note.id,
+            permission='read',
+            db=db,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+            )
+
+    content = ''
+    if note.data and isinstance(note.data, dict):
+        content = note.data.get('content', {}).get('md', '') if isinstance(note.data.get('content'), dict) else ''
+
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Заметка не содержит текстового содержимого',
+        )
+
+    # Check for duplicate: is this note already in the knowledge base?
+    existing_files = await Knowledges.get_files_by_id(knowledge_id=id, db=db)
+    for f in existing_files:
+        if f.meta and f.meta.get('note_id') == note.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    'message': 'Заметка уже добавлена в эту базу знаний',
+                    'existing_file_id': f.id,
+                    'note_id': note.id,
+                },
+            )
+
+    file_name = f"{note.title}.md"
+
+    try:
+        file = await Files.insert_new_file(
+            user.id,
+            FileForm(
+                id=str(uuid.uuid4()),
+                filename=file_name,
+                path='',
+                data={'content': content},
+                meta={
+                    'name': note.title,
+                    'content_type': 'text/markdown',
+                    'size': len(content),
+                    'note_id': note.id,
+                },
+            ),
+            db=db,
+        )
+
+        await process_file(
+            request,
+            ProcessFileForm(file_id=file.id, collection_name=id),
+            user=user,
+            db=db,
+        )
+
+        await Knowledges.add_file_to_knowledge_by_id(knowledge_id=id, file_id=file.id, user_id=user.id, db=db)
+
+        # Re-embed KB metadata with updated file names
+        await reembed_knowledge_base(request, id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.debug(e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+    return KnowledgeFilesResponse(
+        **knowledge.model_dump(),
+        files=await Knowledges.get_file_metadatas_by_id(knowledge.id, db=db),
+    )
+
+
+class KnowledgeNoteUpdateForm(BaseModel):
+    note_id: str
+    file_id: str
+
+
+@router.post('/{id}/note/update', response_model=Optional[KnowledgeFilesResponse])
+async def update_note_in_knowledge_by_id(
+    request: Request,
+    id: str,
+    form_data: KnowledgeNoteUpdateForm,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    knowledge = await Knowledges.get_knowledge_by_id(id=id, db=db)
+    if not knowledge:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+
+    if (
+        knowledge.user_id != user.id
+        and not await AccessGrants.has_access(
+            user_id=user.id,
+            resource_type='knowledge',
+            resource_id=knowledge.id,
+            permission='write',
+            db=db,
+        )
+        and user.role != 'admin'
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
+
+    file = await Files.get_file_by_id(form_data.file_id, db=db)
+    if not file:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+
+    if not await Knowledges.has_file(knowledge_id=id, file_id=form_data.file_id, db=db):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+
+    note = await Notes.get_note_by_id(form_data.note_id)
+    if not note:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.NOT_FOUND,
+        )
+
+    content = ''
+    if note.data and isinstance(note.data, dict):
+        content = note.data.get('content', {}).get('md', '') if isinstance(note.data.get('content'), dict) else ''
+
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Заметка не содержит текстового содержимого',
+        )
+
+    try:
+        await Files.update_file_data_by_id(
+            form_data.file_id,
+            {'content': content},
+            db=db,
+        )
+        await Files.update_file_metadata_by_id(
+            form_data.file_id,
+            {'name': note.title, 'size': len(content), 'note_id': note.id},
+            db=db,
+        )
+
+        await ASYNC_VECTOR_DB_CLIENT.delete(
+            collection_name=id, filter={'file_id': form_data.file_id}
+        )
+
+        await process_file(
+            request,
+            ProcessFileForm(file_id=form_data.file_id, collection_name=id),
+            user=user,
+            db=db,
+        )
+    except Exception as e:
+        log.debug(e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+    return KnowledgeFilesResponse(
+        **knowledge.model_dump(),
+        files=await Knowledges.get_file_metadatas_by_id(knowledge.id, db=db),
+    )
 
 
 @router.post('/{id}/file/update', response_model=Optional[KnowledgeFilesResponse])
@@ -820,6 +1072,9 @@ async def remove_file_from_knowledge_by_id(
         )
 
     await Knowledges.remove_file_from_knowledge_by_id(knowledge_id=id, file_id=form_data.file_id, db=db)
+
+    # Re-embed KB metadata with updated file names
+    await reembed_knowledge_base(request, id)
 
     # Remove content from the vector database
     try:
@@ -1051,6 +1306,10 @@ async def add_files_to_knowledge_batch(
     successful_file_ids = [r.file_id for r in result.results if r.status == 'completed']
     for file_id in successful_file_ids:
         await Knowledges.add_file_to_knowledge_by_id(knowledge_id=id, file_id=file_id, user_id=user.id, db=db)
+
+    # Re-embed KB metadata with updated file names
+    if successful_file_ids:
+        await reembed_knowledge_base(request, id)
 
     # If there were any errors, include them in the response
     if result.errors:

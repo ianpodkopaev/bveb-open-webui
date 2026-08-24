@@ -118,6 +118,7 @@ from open_webui.utils.response import normalize_usage
 from open_webui.utils.mcp.client import MCPClient
 from open_webui.utils.file_generator import generate_pptx
 from open_webui.models.files import Files, FileForm
+from open_webui.models.knowledge import Knowledges
 
 from open_webui.config import (
     CACHE_DIR,
@@ -977,6 +978,7 @@ async def apply_source_context_to_messages(
     sources: list,
     user_message: str,
     include_content: bool = True,
+    rag_template_override: str | None = None,
 ) -> list:
     """
     Build source context from citation sources and apply to messages.
@@ -995,15 +997,17 @@ async def apply_source_context_to_messages(
     if not context:
         return messages
 
+    template = rag_template_override or request.app.state.config.RAG_TEMPLATE
+
     if RAG_SYSTEM_CONTEXT:
         return add_or_update_system_message(
-            await rag_template(request.app.state.config.RAG_TEMPLATE, context, user_message),
+            await rag_template(template, context, user_message),
             messages,
             append=True,
         )
     else:
         return add_or_update_user_message(
-            await rag_template(request.app.state.config.RAG_TEMPLATE, context, user_message),
+            await rag_template(template, context, user_message),
             messages,
             append=False,
         )
@@ -1366,7 +1370,6 @@ async def process_file_generation_markers(content, request, user, metadata):
             return content, []
 
     from open_webui.internal.db import get_async_db_context
-    from open_webui.models.users import Users
     from open_webui.storage.provider import Storage
 
     generated_files = []
@@ -2187,6 +2190,16 @@ async def chat_completion_files_handler(
 
         queries = []
         if not all_full_context:
+            # Detect per-KB query generation prompt override
+            kb_query_gen_template = None
+            for item in files:
+                kb_id = item.get('id') if item.get('type') == 'collection' else item.get('collection_name')
+                if kb_id:
+                    kb = await Knowledges.get_knowledge_by_id(kb_id)
+                    if kb and kb.meta and isinstance(kb.meta, dict) and kb.meta.get('query_generation_prompt'):
+                        kb_query_gen_template = kb.meta['query_generation_prompt']
+                        break
+
             try:
                 queries_response = await generate_queries(
                     request,
@@ -2197,6 +2210,7 @@ async def chat_completion_files_handler(
                         'chat_id': body.get('metadata', {}).get('chat_id'),
                     },
                     user,
+                    query_generation_template_override=kb_query_gen_template,
                 )
                 queries_response = queries_response['choices'][0]['message']['content']
 
@@ -2936,6 +2950,20 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         # Remove duplicate files based on their content
         files = list({json.dumps(f, sort_keys=True): f for f in files}.values())
 
+    # If no files were sent with this message, inherit files from the persisted chat
+    # so that follow-up questions still trigger RAG against previously uploaded documents.
+    if not files:
+        _chat_id = metadata.get('chat_id')
+        if _chat_id and not _chat_id.startswith('local:') and not _chat_id.startswith('channel:'):
+            try:
+                existing_chat = await Chats.get_chat_by_id(_chat_id)
+                if existing_chat and existing_chat.chat:
+                    inherited = existing_chat.chat.get('files') or []
+                    if inherited:
+                        files = inherited
+            except Exception:
+                pass
+
     metadata = {
         **metadata,
         'model_id': form_data.get('model'),
@@ -3208,8 +3236,26 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     metadata['sources'] = sources[:] if sources else []
 
     # If context is not empty, insert it into the messages
+    # Detect per-KB RAG template override
+    rag_template_override = None
+    if sources:
+        kb_ids = set()
+        for source in sources:
+            src_item = source.get('source', {})
+            if src_item.get('type') in ('collection', None) and src_item.get('id'):
+                kb_ids.add(src_item['id'])
+        if kb_ids:
+            for kb_id in kb_ids:
+                kb = await Knowledges.get_knowledge_by_id(kb_id)
+                if kb and kb.meta and isinstance(kb.meta, dict) and kb.meta.get('rag_template'):
+                    rag_template_override = kb.meta['rag_template']
+                    break  # use first KB's template
+
     if sources and prompt:
-        form_data['messages'] = await apply_source_context_to_messages(request, form_data['messages'], sources, prompt)
+        form_data['messages'] = await apply_source_context_to_messages(
+            request, form_data['messages'], sources, prompt,
+            rag_template_override=rag_template_override,
+        )
 
     # If there are citations, add them to the data_items
     sources = [

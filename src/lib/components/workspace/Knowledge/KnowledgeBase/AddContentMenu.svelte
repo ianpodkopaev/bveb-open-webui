@@ -9,6 +9,7 @@
 	import FolderOpen from '$lib/components/icons/FolderOpen.svelte';
 	import ArrowPath from '$lib/components/icons/ArrowPath.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
+	import DocumentText from '$lib/components/icons/DocumentText.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -109,6 +110,16 @@
 			>
 				<BarsArrowUp strokeWidth="2" />
 				<div class="flex items-center">{$i18n.t('Add text content')}</div>
+			</button>
+
+			<button
+				class="select-none flex gap-2 items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl w-full"
+				on:click={() => {
+					onUpload({ type: 'note' });
+				}}
+			>
+				<DocumentText strokeWidth="2" />
+				<div class="flex items-center">{$i18n.t('Добавить заметку')}</div>
 			</button>
 		</div>
 	</div>

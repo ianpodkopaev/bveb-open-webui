@@ -87,6 +87,7 @@
 	import FilesOverlay from '../chat/MessageInput/FilesOverlay.svelte';
 	import RecordMenu from './RecordMenu.svelte';
 	import NoteMenu from './Notes/NoteMenu.svelte';
+	import PublishNoteToKnowledgeModal from './PublishNoteToKnowledgeModal.svelte';
 	import EllipsisHorizontal from '../icons/EllipsisHorizontal.svelte';
 	import Sparkles from '../icons/Sparkles.svelte';
 	import SparklesSolid from '../icons/SparklesSolid.svelte';
@@ -97,6 +98,7 @@
 	import Sidebar from '../icons/Sidebar.svelte';
 	import ArrowRight from '../icons/ArrowRight.svelte';
 	import Cog6 from '../icons/Cog6.svelte';
+	import DocumentText from '../icons/DocumentText.svelte';
 	import AiMenu from './AIMenu.svelte';
 	import AdjustmentsHorizontalOutline from '../icons/AdjustmentsHorizontalOutline.svelte';
 
@@ -149,6 +151,7 @@
 
 	let showDeleteConfirm = false;
 	let showAccessControlModal = false;
+	let showPublishNoteModal = false;
 
 	let ignoreBlur = false;
 	let titleInputFocused = false;
@@ -906,6 +909,10 @@ Provide the enhanced notes in markdown format. Use markdown syntax for headings,
 	</div>
 </DeleteConfirmDialog>
 
+{#if note}
+	<PublishNoteToKnowledgeModal bind:show={showPublishNoteModal} noteId={note.id} />
+{/if}
+
 <PaneGroup direction="horizontal" class="w-full h-full">
 	<Pane defaultSize={70} minSize={30} class="h-full flex flex-col w-full relative">
 		<div class="relative flex-1 w-full h-full flex justify-center pt-[11px]" id="note-editor">
@@ -1057,6 +1064,17 @@ Provide the enhanced notes in markdown format. Use markdown syntax for headings,
 											}}
 										>
 											<AdjustmentsHorizontalOutline />
+										</button>
+									</Tooltip>
+
+									<Tooltip placement="top" content={$i18n.t('Опубликовать в базу знаний')} className="cursor-pointer">
+										<button
+											class="p-1.5 bg-transparent hover:bg-white/5 transition rounded-lg"
+											on:click={() => {
+												showPublishNoteModal = true;
+											}}
+										>
+											<DocumentText className="size-4.5" />
 										</button>
 									</Tooltip>
 								{/if}

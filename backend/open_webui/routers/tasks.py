@@ -433,7 +433,12 @@ async def generate_image_prompt(request: Request, form_data: dict, user=Depends(
 
 
 @router.post('/queries/completions')
-async def generate_queries(request: Request, form_data: dict, user=Depends(get_verified_user)):
+async def generate_queries(
+    request: Request,
+    form_data: dict,
+    user=Depends(get_verified_user),
+    query_generation_template_override: str | None = None,
+):
     type = form_data.get('type')
     if type == 'web_search':
         if not request.app.state.config.ENABLE_SEARCH_QUERY_GENERATION:
@@ -478,7 +483,9 @@ async def generate_queries(request: Request, form_data: dict, user=Depends(get_v
 
     log.debug(f'generating {type} queries using model {task_model_id} for user {user.email}')
 
-    if (request.app.state.config.QUERY_GENERATION_PROMPT_TEMPLATE).strip() != '':
+    if query_generation_template_override:
+        template = query_generation_template_override
+    elif (request.app.state.config.QUERY_GENERATION_PROMPT_TEMPLATE).strip() != '':
         template = request.app.state.config.QUERY_GENERATION_PROMPT_TEMPLATE
     else:
         template = DEFAULT_QUERY_GENERATION_PROMPT_TEMPLATE

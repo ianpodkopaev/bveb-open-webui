@@ -44,6 +44,7 @@
 
 	import AddContentMenu from './KnowledgeBase/AddContentMenu.svelte';
 	import AddTextContentModal from './KnowledgeBase/AddTextContentModal.svelte';
+	import AddNoteModal from './KnowledgeBase/AddNoteModal.svelte';
 
 	import SyncConfirmDialog from '../../common/ConfirmDialog.svelte';
 	import Drawer from '$lib/components/common/Drawer.svelte';
@@ -63,6 +64,7 @@
 
 	let showAddWebpageModal = false;
 	let showAddTextContentModal = false;
+	let showAddNoteModal = false;
 
 	let showSyncConfirmModal = false;
 	let showAccessControlModal = false;
@@ -806,6 +808,8 @@
 	}}
 />
 
+<AddNoteModal bind:show={showAddNoteModal} knowledgeId={knowledge?.id ?? ''} />
+
 <input
 	id="files-input"
 	bind:files={inputFiles}
@@ -939,17 +943,19 @@
 					{#if knowledge?.write_access}
 						<div>
 							<AddContentMenu
-								onUpload={(data) => {
-									if (data.type === 'directory') {
-										uploadDirectoryHandler();
-									} else if (data.type === 'web') {
-										showAddWebpageModal = true;
-									} else if (data.type === 'text') {
-										showAddTextContentModal = true;
-									} else {
-										document.getElementById('files-input').click();
-									}
-								}}
+							onUpload={(data) => {
+								if (data.type === 'directory') {
+									uploadDirectoryHandler();
+								} else if (data.type === 'web') {
+									showAddWebpageModal = true;
+								} else if (data.type === 'text') {
+									showAddTextContentModal = true;
+								} else if (data.type === 'note') {
+									showAddNoteModal = true;
+								} else {
+									document.getElementById('files-input').click();
+								}
+							}}
 								onSync={() => {
 									showSyncConfirmModal = true;
 								}}
