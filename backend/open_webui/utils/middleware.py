@@ -2178,6 +2178,29 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
     return form_data
 
 
+FULL_DOCUMENT_TRIGGERS_RU = [
+    'сравни', 'сравнение', 'найди отличия', 'отличия',
+    'весь документ', 'полностью', 'полное содержимое',
+    'все пункты', 'перечисли все', 'выдай всё', 'выдай все',
+    'содержание документа', 'содержимое документа',
+    'сводка по всему', 'краткое содержание',
+]
+FULL_DOCUMENT_TRIGGERS_EN = [
+    'compare', 'entire document', 'full document',
+    'list all', 'all items', 'all points',
+    'extract everything', 'full content',
+]
+
+
+def _is_full_document_request(text: str) -> bool:
+    if not text:
+        return False
+    msg = text.lower()
+    if '[весь документ]' in msg or '[full]' in msg:
+        return True
+    return any(t in msg for t in FULL_DOCUMENT_TRIGGERS_RU + FULL_DOCUMENT_TRIGGERS_EN)
+
+
 async def chat_completion_files_handler(
     request: Request, body: dict, extra_params: dict, user: UserModel
 ) -> tuple[dict, dict[str, list]]:
@@ -2186,10 +2209,12 @@ async def chat_completion_files_handler(
 
     if files := body.get('metadata', {}).get('files', None):
         # Check if all files are in full context mode
-        all_full_context = all(item.get('context') == 'full' for item in files)
+        user_message = get_last_user_message(body['messages']) or ''
+        auto_full = _is_full_document_request(user_message)
+        all_full_context = auto_full or all(item.get('context') == 'full' for item in files)
 
         queries = []
-        if not all_full_context:
+        if not all_full_context and not auto_full:
             # Detect per-KB query generation prompt override
             kb_query_gen_template = None
             for item in files:

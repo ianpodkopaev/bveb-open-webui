@@ -1300,7 +1300,7 @@ async def get_sources_from_items(
                     permission='read',
                 )
             ):
-                if item.get('context') == 'full' or request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
+                if full_context or item.get('context') == 'full' or request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
                     if knowledge_base and (
                         user.role == 'admin'
                         or knowledge_base.user_id == user.id
