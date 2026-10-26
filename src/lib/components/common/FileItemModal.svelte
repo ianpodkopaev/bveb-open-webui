@@ -347,7 +347,7 @@
 						{/if}
 					</div>
 
-					{#if edit}
+					{#if edit && item?.type !== 'collection'}
 						<div class=" self-end">
 							<Tooltip
 								content={enableFullContent

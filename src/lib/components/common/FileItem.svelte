@@ -165,7 +165,10 @@
 	{:else}
 		<Tooltip content={decodeString(name)} className="flex flex-col w-full" placement="top-start">
 			<div class="flex flex-col justify-center -space-y-0.5 px-1 w-full">
-				<div class=" dark:text-gray-100 text-sm flex justify-between items-center">
+				<div
+					class=" dark:text-gray-100 text-sm flex {item?.type === 'collection'
+						? 'justify-center'
+						: 'justify-between'} items-center">
 					<div class="font-medium line-clamp-1 flex-1 pr-1">{decodeString(name)}</div>
 					{#if size}
 						<div class="text-gray-500 text-xs capitalize shrink-0">{formatFileSize(size)}</div>
@@ -173,7 +176,7 @@
 						<div class="text-gray-500 text-xs capitalize shrink-0">{type}</div>
 					{/if}
 				</div>
-				{#if edit && !loading && item}
+				{#if edit && !loading && item && item?.type !== 'collection'}
 					<div class="flex items-center gap-1 mt-0.5">
 						{#if item?.content_too_large}
 							<span class="text-[10px] text-gray-400">RAG</span>
