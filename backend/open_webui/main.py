@@ -107,6 +107,7 @@ from open_webui.routers import (
     terminals,
     automations,
     calendar,
+    digup,
 )
 
 from open_webui.routers.retrieval import (
@@ -1465,6 +1466,7 @@ app.include_router(utils.router, prefix='/api/v1/utils', tags=['utils'])
 app.include_router(terminals.router, prefix='/api/v1/terminals', tags=['terminals'])
 app.include_router(automations.router, prefix='/api/v1/automations', tags=['automations'])
 app.include_router(calendar.router, prefix='/api/v1/calendars', tags=['calendars'])
+app.include_router(digup.router, prefix='/api/v1/digup', tags=['digup'])
 
 # SCIM 2.0 API for identity management
 if ENABLE_SCIM:

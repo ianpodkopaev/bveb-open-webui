@@ -17,8 +17,26 @@ services:
       - 'OLLAMA_BASE_URL='
       - 'WEBUI_NAME=БелВЭБ Ai'
       - 'WEBUI_SECRET_KEY='
+      - 'RAG_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2'
+      - 'USE_EMBEDDING_MODEL_DOCKER=sentence-transformers/all-MiniLM-L6-v2'
       - 'RAG_EMBEDDING_MODEL_AUTO_UPDATE=false'
       - 'HF_HUB_OFFLINE=1'
+      # embeddings: hosted e5 on the mlops box, via the sidecar's OpenAI /embeddings shim
+      - 'RAG_EMBEDDING_ENGINE=openai'
+      - 'RAG_EMBEDDING_MODEL=e5_ensemble'
+      - 'RAG_OPENAI_API_BASE_URL=http://bveb-media:8811'
+      - 'RAG_OPENAI_API_KEY=bveb-media'
+      # media sidecar (frames→qwen, audio→hosted whisper) — no inference in this container
+      - 'CONTENT_EXTRACTION_ENGINE=external'
+      - 'EXTERNAL_DOCUMENT_LOADER_URL=http://bveb-media:8811'
+      - 'EXTERNAL_DOCUMENT_LOADER_API_KEY=bveb-media'
+      # chat LLM: hosted gpt-oss (vLLM) — model id is literally '/model'
+      - 'OPENAI_API_BASE_URL=https://gpt-oss-mlops-stage.bveb.by/v1'
+      - 'OPENAI_API_KEY=bveb-media'
+      - 'ENABLE_API_KEYS=true'
+      # don't route LAN/proxy-reached hosts through Kerio
+      - 'NO_PROXY=localhost,127.0.0.1,::1,192.168.88.0/24,172.22.0.0/16,bveb-media'
+      - 'no_proxy=localhost,127.0.0.1,::1,192.168.88.0/24,172.22.0.0/16,bveb-media'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped

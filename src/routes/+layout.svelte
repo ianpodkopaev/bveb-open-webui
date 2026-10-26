@@ -266,6 +266,7 @@
 			id: id,
 			code: code,
 			packages: packages,
+			token: localStorage.getItem('token'),
 			files: filePayloads.length > 0 ? filePayloads : undefined
 		});
 

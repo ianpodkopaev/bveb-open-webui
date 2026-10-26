@@ -171,6 +171,63 @@ function fsMkdir(path: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Outbound fetch proxy
+// The sandbox runs in the browser but may have no/limited internet egress,
+// while the backend does. Route cross-origin requests through the
+// authenticated backend endpoint so sandbox scripts get the same egress.
+// `self.__authToken` is set per-request by the caller (see message handler).
+// ---------------------------------------------------------------------------
+
+const __realFetch = self.fetch.bind(self);
+
+function isExternalHttpUrl(requestUrl: string) {
+	try {
+		const u = new URL(requestUrl, self.location.href);
+		return (u.protocol === 'http:' || u.protocol === 'https:') && u.origin !== self.location.origin;
+	} catch {
+		return false;
+	}
+}
+
+self.fetch = function proxyAwareFetch(input: any, init: any = {}): Promise<Response> {
+	const requestUrl = typeof input === 'string' ? input : input.url;
+	const method = (init.method || 'GET').toUpperCase();
+
+	if (
+		typeof input !== 'string' ||
+		input.startsWith('blob:') ||
+		input.startsWith('data:') ||
+		!isExternalHttpUrl(requestUrl) ||
+		method === 'POST'
+	) {
+		return __realFetch(input, init);
+	}
+
+	const url = new URL(requestUrl, self.location.href).toString();
+	return __realFetch(
+		'/api/v1/utils/http/proxy',
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				...(self.token ? { Authorization: `Bearer ${self.token}` } : {})
+			},
+			body: JSON.stringify({ url, method })
+		}
+	).then(async (resp: Response) => {
+		if (!resp.ok) {
+			throw new TypeError('Failed to fetch');
+		}
+		const data = await resp.json();
+		const body = Uint8Array.from(atob(data.body), (c: string) => c.charCodeAt(0));
+		return new Response(body.buffer, {
+			status: data.status,
+			headers: data.headers
+		});
+	});
+} as any;
+
+// ---------------------------------------------------------------------------
 // Code execution
 // ---------------------------------------------------------------------------
 

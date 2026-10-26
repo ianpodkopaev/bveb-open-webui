@@ -1028,6 +1028,7 @@ async def update_file_from_knowledge_by_id(
 
 @router.post('/{id}/file/remove', response_model=Optional[KnowledgeFilesResponse])
 async def remove_file_from_knowledge_by_id(
+    request: Request,
     id: str,
     form_data: KnowledgeFileIdForm,
     delete_file: bool = Query(True),

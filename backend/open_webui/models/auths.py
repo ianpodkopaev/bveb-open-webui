@@ -86,6 +86,7 @@ class SignupForm(BaseModel):
 
 class AddUserForm(SignupForm):
     role: Optional[str] = 'pending'
+    subdivision: Optional[str] = None
 
 
 class AuthsTable:
@@ -97,6 +98,7 @@ class AuthsTable:
         profile_image_url: str = '/user.png',
         role: str = 'pending',
         oauth: Optional[dict] = None,
+        subdivision: Optional[str] = None,
         db: Optional[AsyncSession] = None,
     ) -> Optional[UserModel]:
         async with get_async_db_context(db) as db:
@@ -108,7 +110,9 @@ class AuthsTable:
             result = Auth(**auth.model_dump())
             db.add(result)
 
-            user = await Users.insert_new_user(id, name, email, profile_image_url, role, oauth=oauth, db=db)
+            user = await Users.insert_new_user(
+                id, name, email, profile_image_url, role, oauth=oauth, subdivision=subdivision, db=db
+            )
 
             await db.commit()
             await db.refresh(result)

@@ -1,6 +1,11 @@
+import base64
 import black
+import ipaddress
 import logging
 import markdown
+from urllib.parse import urlparse
+
+import aiohttp
 
 from open_webui.models.chats import ChatTitleMessagesForm
 from open_webui.config import DATA_DIR, ENABLE_ADMIN_EXPORT
@@ -75,6 +80,44 @@ async def execute_code(request: Request, form_data: CodeForm, user=Depends(get_v
 
 class MarkdownForm(BaseModel):
     md: str
+
+
+class HttpProxyForm(BaseModel):
+    url: str
+    method: str = 'GET'
+    headers: dict = {}
+    body: str = ''
+
+
+@router.post('/http/proxy')
+async def http_proxy(form_data: HttpProxyForm, user=Depends(get_verified_user)):
+    """Fetch a URL server-side via the backend's proxy/egress (for the browser sandbox)."""
+    parsed = urlparse(form_data.url)
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+        raise HTTPException(400, detail='Only http(s) URLs are allowed')
+    # SSRF guard: block loopback and link-local (shortcut: not a full CIDR blocklist)
+    try:
+        ip = ipaddress.ip_address(parsed.hostname)
+        if ip.is_loopback or ip.is_link_local:
+            raise HTTPException(403, detail='Blocked address')
+    except ValueError:
+        pass  # hostname, not an IP
+
+    headers = {k: v for k, v in form_data.headers.items() if k.lower() not in ('host',)}
+    body = form_data.body.encode() if form_data.body else None
+    try:
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.request(
+                form_data.method.upper(), form_data.url, headers=headers, data=body, timeout=aiohttp.ClientTimeout(total=60), allow_redirects=True
+            ) as resp:
+                content = await resp.read()
+                return {
+                    'status': resp.status,
+                    'headers': dict(resp.headers),
+                    'body': base64.b64encode(content).decode(),
+                }
+    except Exception as e:
+        raise HTTPException(502, detail=f'fetch failed: {type(e).__name__}: {e}')
 
 
 @router.post('/markdown')

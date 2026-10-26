@@ -253,7 +253,8 @@
 		worker.postMessage({
 			id: id,
 			code: code,
-			packages: packages
+			packages: packages,
+			token: localStorage.getItem('token')
 		});
 
 		const timeoutId = setTimeout(() => {
